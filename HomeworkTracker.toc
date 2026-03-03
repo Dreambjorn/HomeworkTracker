@@ -1,0 +1,28 @@
+## Interface: 120000, 120001
+## Title: Homework Tracker
+## IconTexture: 647701
+## Notes: Tracks various game activities and progress
+## Author: Dreambjorn
+## Version: 1.2.0
+## Category: Homework
+## SavedVariablesPerCharacter: HomeworkTrackerDB
+
+## --- Libraries --------------------------------------------------------
+libs\LibStub\LibStub.lua
+libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+libs\LibSharedMedia-3.0\LibSharedMedia-3.0.lua
+
+## --- Initialization --------------------------------------------------
+DBInitializer.lua
+
+## --- Databases --------------------------------------------------------
+Database\General.lua
+Database\TheWarWithin.lua
+Database\Midnight.lua
+
+## --- Core --------------------------------------------------
+Util.lua
+Core.lua
+Modules.lua
+UI.lua
+Config.lua
