@@ -3,7 +3,7 @@ Homework Tracker is a daily and weekly task tracker for your characters, heavily
 
 It covers the stuff that's easy to forget or lose track of across multiple characters — reputations, currencies, rares, weeklies, among other things.
 
-<img width="453" height="1013" alt="image" src="https://github.com/user-attachments/assets/dfcef7dd-686f-4b1f-89bb-d7d5eaad1dc4" />
+<img width="489" height="1128" alt="Screenshot_2" src="https://github.com/user-attachments/assets/d6fe28d2-8fda-45bb-b03e-fdde00f05fa0" />
 
 ---
 What it tracks:
@@ -26,7 +26,7 @@ You can filter by expansion, hide completed sections, toggle categories, change 
 
 <img width="744" height="604" alt="image" src="https://github.com/user-attachments/assets/d244171d-7b99-4082-a70f-8ca0f12a5654" />
 
-<img width="738" height="608" alt="image" src="https://github.com/user-attachments/assets/a2056d1b-9a49-40ed-b062-f7d1a1b8cc5a" />
+<img width="747" height="604" alt="Screenshot_1" src="https://github.com/user-attachments/assets/fad50f35-4bc8-444b-824a-2c18f968bd20" />
 
 <img width="534" height="418" alt="image" src="https://github.com/user-attachments/assets/a298ad68-7a98-487f-a611-0495d4bb0e9a" />
 
