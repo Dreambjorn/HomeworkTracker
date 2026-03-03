@@ -543,6 +543,118 @@ local function CreateFontDropdown(parent, labelText, dbKey, onChange)
     return frame
 end
 
+local function CreateMediaDropdown(parent, labelText, dbKey, mediaType, onChange)
+    local frame = CreateFrame("Frame", nil, parent)
+    frame:SetSize(250, 45)
+
+    local label = frame:CreateFontString(nil, "OVERLAY")
+    label:SetPoint("TOPLEFT", 0, 0)
+    SetConfigFont(label, 12)
+    label:SetText(labelText)
+
+    local button = CreateFrame("Button", nil, frame, "BackdropTemplate")
+    button:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -5)
+    button:SetSize(220, 24)
+    button:SetBackdrop({
+        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 12,
+        insets = {left=2, right=2, top=2, bottom=2}
+    })
+    button:SetBackdropColor(0, 0, 0, 0.8)
+
+    local btnText = button:CreateFontString(nil, "OVERLAY")
+    btnText:SetPoint("LEFT", 8, 0)
+    SetConfigFont(btnText, 12)
+    button.text = btnText
+
+    local arrow = button:CreateTexture(nil, "ARTWORK")
+    arrow:SetPoint("RIGHT", -6, 0)
+    arrow:SetSize(12, 12)
+    arrow:SetTexture("Interface\\ChatFrame\\ChatFrameExpandArrow")
+
+    local list = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+    list:SetPoint("TOPLEFT", button, "BOTTOMLEFT", 0, -2)
+    list:SetSize(220, 150)
+    list:SetBackdrop({
+        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 12,
+        insets = {left=2, right=2, top=2, bottom=2}
+    })
+    list:SetBackdropColor(0.1, 0.1, 0.1, 0.98)
+    list:SetFrameStrata("TOOLTIP")
+    list:Hide()
+
+    local scroll = CreateFrame("ScrollFrame", nil, list, "UIPanelScrollFrameTemplate")
+    scroll:SetPoint("TOPLEFT", 4, -4)
+    scroll:SetPoint("BOTTOMRIGHT", -24, 4)
+
+    local content = CreateFrame("Frame", nil, scroll)
+    content:SetSize(190, 100)
+    scroll:SetScrollChild(content)
+
+    local values = {"Default"}
+    if LSM then
+        for _,n in ipairs(LSM:List(mediaType)) do
+            table.insert(values, n)
+        end
+    end
+    table.sort(values, function(a,b)
+        if a == "Default" then return true end
+        if b == "Default" then return false end
+        return a < b
+    end)
+
+    local function Refresh()
+        for _, child in ipairs({content:GetChildren()}) do child:Hide() end
+        local y = 0
+        for _, name in ipairs(values) do
+            local b = CreateFrame("Button", nil, content, "BackdropTemplate")
+            b:SetSize(190, 20)
+            b:SetPoint("TOPLEFT", 0, y)
+
+            local t = b:CreateFontString(nil, "OVERLAY")
+            t:SetPoint("LEFT", 5, 0)
+            SetConfigFont(t, 12)
+            t:SetText(name)
+            t:SetTextColor(1,1,1)
+
+            b:SetScript("OnClick", function()
+                if name == "Default" then
+                    HomeworkTrackerDB[dbKey] = nil
+                else
+                    HomeworkTrackerDB[dbKey] = name
+                end
+                btnText:SetText(name)
+                list:Hide()
+                if onChange then onChange(name) end
+            end)
+            b:SetScript("OnEnter", function(self)
+                local bg = self:CreateTexture(nil, "BACKGROUND")
+                bg:SetAllPoints()
+                bg:SetColorTexture(0.2,0.2,0.2,0.5)
+                self.bg = bg
+            end)
+            b:SetScript("OnLeave", function(self) if self.bg then self.bg:Hide() end end)
+
+            y = y - SMALL_GAP - 4
+        end
+        content:SetHeight(math.abs(y))
+    end
+
+    button:SetScript("OnClick", function()
+        if list:IsShown() then list:Hide() else Refresh(); list:Show() end
+    end)
+
+    do
+        local sel = HomeworkTrackerDB and HomeworkTrackerDB[dbKey]
+        btnText:SetText(sel and sel ~= "" and sel or "Default")
+    end
+
+    return frame
+end
+
 -- Get selected expansion
 local function GetSelectedExpansion()
     if HomeworkTrackerDB and HomeworkTrackerDB.ui and HomeworkTrackerDB.ui.selectedExpansion then
@@ -1236,15 +1348,8 @@ local function BuildTab_Appearance(parent)
 
     local cbLock = CreateCheckbox(parent, "Lock Tracker Frame", function(val)
         HomeworkTrackerDB.locked = val
-        if addon.mainFrame then
-            addon.mainFrame:SetMovable(not val)
-            if val then
-                addon.mainFrame:RegisterForDrag()
-                addon.mainFrame:EnableMouse(false)
-            else
-                addon.mainFrame:RegisterForDrag("LeftButton")
-                addon.mainFrame:EnableMouse(true)
-            end
+        if addon.mainFrame and addon.mainFrame.titleBar then
+            addon.mainFrame.titleBar:RegisterForDrag("LeftButton")
         end
     end)
     cbLock:SetPoint("TOPLEFT", 30, y)
@@ -1277,6 +1382,17 @@ local function BuildTab_Appearance(parent)
     slHeight.slider:SetValue(HomeworkTrackerDB.height or 400)
     y = y - BIG_GAP - 10
 
+    local hBars = CreateHeader(parent, "Progress Bars")
+    hBars:SetPoint("TOPLEFT", 10, y)
+    y = y - BIG_GAP + 10
+
+    if LSM then
+        local texDropdown = CreateMediaDropdown(parent, "Texture", "barTexture", "statusbar", function(val)
+            if addon.UpdateDisplay then addon:UpdateDisplay() end
+        end)
+        texDropdown:SetPoint("TOPLEFT", 30, y)
+        y = y - BIG_GAP - 5
+    end
 
     local hFonts = CreateHeader(parent, "Main Text")
     hFonts:SetPoint("TOPLEFT", 10, y)
@@ -1290,8 +1406,17 @@ local function BuildTab_Appearance(parent)
     fd.SetMainFont = true 
     fd:SetPoint("TOPLEFT", 30, y)
     fd:SetSelection(HomeworkTrackerDB.font or "Friz Quadrata TT")
-    y = y - BIG_GAP 
+    y = y - BIG_GAP
 
+    local outlineDD = CreateSimpleDropdown(parent, "Outline", 180)
+    outlineDD:SetPoint("TOPLEFT", 30, y)
+    outlineDD:SetOptions({"NONE","OUTLINE","THICKOUTLINE","MONOCHROME"})
+    outlineDD:SetValue(HomeworkTrackerDB.fontOutline or "OUTLINE")
+    outlineDD:SetOnChange(function(val)
+        HomeworkTrackerDB.fontOutline = val
+        addon:UpdateDisplay()
+    end)
+    y = y - BIG_GAP
 
     local slFontSize = CreateSlider(parent, "Font Size", 8, 24, 1, function(val)
         HomeworkTrackerDB.fontSize = val
@@ -1312,7 +1437,18 @@ local function BuildTab_Appearance(parent)
         addon:UpdateDisplay()
     end)
     fdHeader:SetPoint("TOPLEFT", 30, y)
-    fdHeader:SetSelection(HomeworkTrackerDB.headerFont or "Friz Quadrata TT")
+    fdHeader:SetSelection(addon:GetHeaderFontKey())
+    y = y - BIG_GAP
+
+    local outlineHeader = CreateSimpleDropdown(parent, "Outline", 180)
+    outlineHeader:SetPoint("TOPLEFT", 30, y)
+    outlineHeader:SetOptions({"NONE","OUTLINE","THICKOUTLINE","MONOCHROME"})
+    outlineHeader:SetValue(HomeworkTrackerDB.headerFontOutline or "OUTLINE")
+    outlineHeader:SetOnChange(function(val)
+        HomeworkTrackerDB.headerFontOutline = val
+        addon:RefreshTitleBar()
+        addon:UpdateDisplay()
+    end)
     y = y - BIG_GAP
 
     local slHeader = CreateSlider(parent, "Font Size", 10, 30, 1, function(val)
@@ -1321,8 +1457,7 @@ local function BuildTab_Appearance(parent)
         addon:UpdateDisplay()
     end)
     slHeader:SetPoint("TOPLEFT", 30, y)
-    slHeader.SetSliderValue = true
-    slHeader.slider:SetValue(HomeworkTrackerDB.headerFontSize or addon:GetDefaultHeaderFontSize())
+    slHeader.slider:SetValue(HomeworkTrackerDB.headerFontSize or 14)
     y = y - BIG_GAP - 10
 
     local hColors = CreateHeader(parent, "Colors")
@@ -1384,11 +1519,12 @@ local function BuildTab_Appearance(parent)
 
 
     local singleColors = {
-        { "Bountiful Delves", "delves", unpack(addon.defaultColors.delves) },
-        { "Great Vault", "vault", unpack(addon.defaultColors.vault) },
-        { "Season Progress", "progress", unpack(addon.defaultColors.progress) },
-        { "General Weekly Quests", "weekly", addon.defaultColors.weekly[1], addon.defaultColors.weekly[2], addon.defaultColors.weekly[3], "Applied to weekly quests that are not bound to a specific zone" },
-        { "Currencies / Items", "currency", unpack(addon.defaultColors.currency) },
+        { "Bountiful Delves",    "delves",         unpack(addon.defaultColors.delves) },
+        { "Delve Companion",     "delveCompanion", unpack(addon.defaultColors.delveCompanion) },
+        { "Great Vault",         "vault",          unpack(addon.defaultColors.vault) },
+        { "Season Progress",     "progress",       unpack(addon.defaultColors.progress) },
+        { "General Weekly Quests", "weekly",        addon.defaultColors.weekly[1], addon.defaultColors.weekly[2], addon.defaultColors.weekly[3], "Applied to weekly quests that are not bound to a specific zone" },
+        { "Currencies / Items",  "currency",       unpack(addon.defaultColors.currency) },
     }
     
     for _, sc in ipairs(singleColors) do
@@ -1694,6 +1830,7 @@ local function BuildTab_Appearance(parent)
                 f:Show()
                 persistOrder()
                 refreshPositions()
+                if addon.UpdateDisplay then addon:UpdateDisplay() end
             end
 
             for idx, m in ipairs(mods) do
@@ -1734,10 +1871,13 @@ local function BuildTab_Appearance(parent)
         HomeworkTrackerDB.locked = false
         HomeworkTrackerDB.scale = addon.defaults.scale
         HomeworkTrackerDB.colors = {} -- Clear overrides
-        HomeworkTrackerDB.font = nil -- Defaults to Friz
-        HomeworkTrackerDB.fontSize = addon.GetDefaultFontSize and addon:GetDefaultFontSize() or 11
-        HomeworkTrackerDB.headerFont = nil -- Defaults to Friz
-        HomeworkTrackerDB.headerFontSize = addon.GetDefaultHeaderFontSize and addon:GetDefaultHeaderFontSize() or 14
+        HomeworkTrackerDB.font = addon.defaults.font
+        HomeworkTrackerDB.fontSize = addon.defaults.fontSize
+        HomeworkTrackerDB.fontOutline = addon.defaults.fontOutline
+        HomeworkTrackerDB.headerFont = addon.defaults.headerFont
+        HomeworkTrackerDB.headerFontSize = addon.defaults.headerFontSize
+        HomeworkTrackerDB.headerFontOutline = addon.defaults.headerFontOutline
+        HomeworkTrackerDB.barTexture = nil
         HomeworkTrackerDB.width = addon.defaults.width or 280
         HomeworkTrackerDB.height = addon.defaults.height or 400
         HomeworkTrackerDB.position = addon.defaults.position and { point = addon.defaults.position.point,
@@ -2391,8 +2531,8 @@ local function BuildTab_Rares(parent)
         end
     end
 
-    if hasEnabledExpansion then
-        y = y - SMALL_GAP
+    if not hasEnabledExpansion then
+        y = y + SMALL_GAP - 10
     end
 
     local h2 = CreateHeader(parent, "Options")
@@ -2405,10 +2545,19 @@ local function BuildTab_Rares(parent)
     end)
     cb3:SetPoint("TOPLEFT", 30, y)
     cb3.check:SetChecked(HomeworkTrackerDB.rares.currentZone)
-    
+    y = y - SMALL_GAP - 14
+
+    local cbRep = CreateCheckbox(parent, "Hide Rares with Weekly Reputation Collected", function(val)
+        HomeworkTrackerDB.rares.hideRepComplete = val
+        addon:UpdateDisplay()
+    end)
+    cbRep:SetPoint("TOPLEFT", 30, y)
+    cbRep.check:SetChecked(HomeworkTrackerDB.rares.hideRepComplete or false)
+
     local btnReset
     btnReset, y = PlaceResetButton(parent, y, function()
         HomeworkTrackerDB.rares.currentZone = addon.defaults.rares.currentZone
+        HomeworkTrackerDB.rares.hideRepComplete = addon.defaults.rares.hideRepComplete
         HomeworkTrackerDB.rares.hiddenZones = {}
         RefreshContent()
         addon:UpdateDisplay()

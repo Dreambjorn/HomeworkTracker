@@ -3,9 +3,10 @@
 ## IconTexture: 647701
 ## Notes: Tracks various game activities and progress
 ## Author: Dreambjorn
-## Version: 1.2.0
+## Version: 1.3.0
 ## Category: Homework
 ## SavedVariablesPerCharacter: HomeworkTrackerDB
+## SavedVariables: HomeworkTrackerAccountDB
 
 ## --- Libraries --------------------------------------------------------
 libs\LibStub\LibStub.lua

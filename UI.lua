@@ -18,6 +18,7 @@ local function ReleaseContainer(container)
     container:SetScript("OnLeave", nil)
     container:SetScript("OnMouseUp", nil)
     container:EnableMouse(false)
+    container._activityKey = nil
     if container.icon then container.icon:SetTexture(nil); container.icon:Hide() end
     if container.iconButton then
         container.iconButton:Hide()
@@ -93,7 +94,7 @@ function addon:CreateUI()
         updateTimer = updateTimer + elapsed
         if updateTimer >= 1 then
             updateTimer = 0
-            addon:UpdateDisplay()
+            addon:UpdateActivityTimers()
         end
     end)
     
@@ -210,11 +211,11 @@ function addon:RefreshTitleBar()
     local r, g, b = GetColor("headerText", nil, 0.3, 0.69, 0.93)
     local fontKey  = self:GetHeaderFontKey()
     local fontSize = self:GetHeaderFontSize() + 1
-    self:SetFont(frame.titleText, fontKey, fontSize)
+    self:SetFont(frame.titleText, fontKey, fontSize, HomeworkTrackerDB.headerFontOutline)
     frame.titleText:SetTextColor(r, g, b, 1)
     frame.titleText:SetText("Homework Tracker")
     if frame.collapseLabel then
-        self:SetFont(frame.collapseLabel, fontKey, fontSize)
+        self:SetFont(frame.collapseLabel, fontKey, fontSize, HomeworkTrackerDB.headerFontOutline)
         frame.collapseLabel:SetTextColor(r, g, b, 1)
     end
 end
@@ -243,17 +244,10 @@ function addon:UpdateLayout()
         self.mainFrame:SetScale(HomeworkTrackerDB.scale)
     end
     
-    local locked = HomeworkTrackerDB.locked
     self.mainFrame:SetMovable(true)
 
-    -- Mouse stays enabled even when locked so collapse still works
     if self.mainFrame.titleBar then
-        local tb = self.mainFrame.titleBar
-        if not locked then
-            tb:RegisterForDrag("LeftButton")
-        else
-            tb:RegisterForDrag()
-        end
+        self.mainFrame.titleBar:RegisterForDrag("LeftButton")
     end
 
     if HomeworkTrackerDB.position then
@@ -343,7 +337,7 @@ function addon:CreateSectionHeader(parent, text, yOffset)
         header:SetJustifyH("LEFT")
     end
     header:SetPoint("TOPLEFT", parent, "TOPLEFT", 5, yOffset)
-    addon:SetFont(header, addon:GetHeaderFontKey(), addon:GetHeaderFontSize())
+    addon:SetFont(header, addon:GetHeaderFontKey(), addon:GetHeaderFontSize(), HomeworkTrackerDB.headerFontOutline)
     header:SetText(text)
     local r, g, b = GetColor("headerText", nil, 0.3, 0.69, 0.93)
     header:SetTextColor(r, g, b, 1)
@@ -430,7 +424,15 @@ function addon:CreateContainer(parent, yOffset, hasBar, indent)
         container.progress:SetPoint("TOPRIGHT", container.bg, "TOPRIGHT", -1, -1)
         container.progress:SetPoint("BOTTOMRIGHT", container.bg, "BOTTOMRIGHT", -1, 1)
         local dR,dG,dB = unpack(addon.defaultColors.progress or {0.5,0.5,0.5})
-        container.progress:SetColorTexture(dR, dG, dB, 0.8)
+        local texPath = addon:GetBarTexture()
+        if texPath then
+            container.progress:SetTexture(texPath)
+            container.progress:SetVertexColor(dR, dG, dB, 0.8)
+        else
+            container.progress:SetTexture(nil)
+            container.progress:SetVertexColor(1, 1, 1, 1)
+            container.progress:SetColorTexture(dR, dG, dB, 0.8)
+        end
         container.progress:Show()
     else
         if container.progress then container.progress:Hide() end
@@ -444,7 +446,12 @@ end
 function addon:SetBarColor(bar, r, g, b, a)
     a = a or 0.8
     if bar.progress then
-        bar.progress:SetColorTexture(r, g, b, a)
+        if bar.progress:GetTexture() then
+            bar.progress:SetVertexColor(r, g, b, a)
+        else
+            bar.progress:SetVertexColor(1, 1, 1, 1)
+            bar.progress:SetColorTexture(r, g, b, a)
+        end
     end
     if bar.bg then
         local bgFactor = 0.45
@@ -471,9 +478,8 @@ function addon:UpdateDisplay()
             if section and section.Hide then section:Hide() end
         end
     end
-    self.sections = {}
+    wipe(self.sections)
     
-    -- Custom order if registered, else default
     if self.RunModules then
         yOffset = self:RunModules(parent, yOffset) 
     else
@@ -497,6 +503,25 @@ function addon:UpdateDisplay()
         self:ApplyCollapseState()
     else
         self.mainFrame:Hide()
+    end
+end
+
+function addon:UpdateActivityTimers()
+    if not self.sections then return end
+    local rr, rg, rb = GetColor("textRight", nil, 1, 1, 1)
+    for _, section in ipairs(self.sections) do
+        if section._activityKey then
+            local timing = self:GetEventTiming(section._activityKey)
+            if timing then
+                if timing.active then
+                    section.timeText:SetText("Active - " .. self:FormatTime(timing.remaining))
+                    section.timeText:SetTextColor(0.4, 1, 0.4, 1)
+                else
+                    section.timeText:SetText(self:FormatTime(timing.remaining))
+                    section.timeText:SetTextColor(rr, rg, rb, 1)
+                end
+            end
+        end
     end
 end
 
@@ -532,6 +557,7 @@ function addon:UpdateActivitiesSection(parent, yOffset, expStates)
         if timing and (not cfg.hideComplete or not self:IsEventComplete(key)) then
             hasContent = true
             local bar = self:CreateContainer(parent, yOffset, true)
+            bar._activityKey = key
             bar.nameText:SetText(self:GetEventName(key))
             bar.icon:Hide()
             
@@ -667,22 +693,6 @@ function addon:UpdateWeeklySection(parent, yOffset, expStates)
     
     local quests = self:GetWeeklyQuestInfo()
     local hidden = cfg.hidden or {}
-    
-    table.sort(quests, function(a, b)
-        local catA = a.category or "general"
-        local catB = b.category or "general"
-        
-        local infoA = addon.categoryInfo and addon.categoryInfo[catA]
-        local infoB = addon.categoryInfo and addon.categoryInfo[catB]
-        
-        local orderA = infoA and infoA.order or 99
-        local orderB = infoB and infoB.order or 99
-        
-        if orderA ~= orderB then
-            return orderA < orderB
-        end
-        return a.name < b.name
-    end)
     
     for _, quest in ipairs(quests) do
         local isHidden = hidden[quest.name]
@@ -1004,7 +1014,12 @@ function addon:UpdateReputationsSection(parent, yOffset, expStates)
                         defaultR, defaultG, defaultB = unpack(catInfo.color)
                     end
 
-                    local r, g, b = GetColor("zones", catID, defaultR, defaultG, defaultB)
+                    local r, g, b
+                    if catID == "delves" then
+                        r, g, b = GetColor("delveCompanion", nil, defaultR, defaultG, defaultB)
+                    else
+                        r, g, b = GetColor("zones", catID, defaultR, defaultG, defaultB)
+                    end
 
                     addon:SetBarColor(bar, r, g, b, 0.8)
                     
@@ -1140,7 +1155,9 @@ function addon:UpdateRaresSection(parent, yOffset, expStates)
     
     local hasVisibleRares = false
     for _, rare in ipairs(rares) do
-        if (not rare.expansion or expStates[rare.expansion]) and (not cfg.hideComplete or not rare.isComplete) then
+        if (not rare.expansion or expStates[rare.expansion])
+            and (not cfg.hideComplete or not rare.isComplete)
+            and (not cfg.hideRepComplete or not rare.isRepComplete) then
             hasVisibleRares = true
             break
         end
@@ -1155,7 +1172,9 @@ function addon:UpdateRaresSection(parent, yOffset, expStates)
     
     local zones = {}
     for _, rare in ipairs(rares) do
-        if (not rare.expansion or expStates[rare.expansion]) and (not cfg.hideComplete or not rare.isComplete) then
+        if (not rare.expansion or expStates[rare.expansion])
+            and (not cfg.hideComplete or not rare.isComplete)
+            and (not cfg.hideRepComplete or not rare.isRepComplete) then
             local z = rare.zone or "Unknown"
             zones[z] = zones[z] or {}
             table.insert(zones[z], rare)

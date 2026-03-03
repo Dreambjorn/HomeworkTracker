@@ -10,6 +10,15 @@ local DEFAULT_FONT_PATH = "Fonts\\FRIZQT__.TTF"
 -- Font system with LibSharedMedia
 local LSM = LibStub and LibStub("LibSharedMedia-3.0", true)
 
+local _dataCache = {}
+local CACHE_NIL = {} -- Marks a cache entry whose real value is nil (distinguishes from uncached)
+local _timingResult = {} -- Reused table written by GetEventTiming; avoids creating a new table on every call
+
+-- Empty the cache so data is looked up again next time
+function addon:InvalidateDataCache()
+    wipe(_dataCache)
+end
+
 -- Default font size
 function addon:GetDefaultFontSize()
     return DEFAULT_FONT_SIZE
@@ -59,7 +68,23 @@ function addon:SetFont(fs, fontKey, size, flags)
     if not fs or not fs.SetFont then return false end
     local path = self:GetFontPath(fontKey or self:GetFontKey())
     local fontSize = size or self:GetFontSize()
+    if not flags then
+        flags = HomeworkTrackerDB and HomeworkTrackerDB.fontOutline
+    end
     return pcall(fs.SetFont, fs, path, fontSize, flags or "OUTLINE")
+end
+
+-- Return current bar texture path, or nil
+function addon:GetBarTexture()
+    if LSM then
+        local key = HomeworkTrackerDB and HomeworkTrackerDB.barTexture
+        if not key or key == "" or key == "Default" then
+            return nil
+        end
+        local ok, path = pcall(LSM.Fetch, LSM, "statusbar", key)
+        if ok and path then return path end
+    end
+    return nil
 end
 
 -- Check font availability
@@ -196,6 +221,8 @@ end
 
 -- Great Vault progress
 function addon:GetGreatVaultInfo()
+    if _dataCache.greatVault then return _dataCache.greatVault end
+
     local data = {
         raid = {},
         mythicPlus = {},
@@ -217,11 +244,16 @@ function addon:GetGreatVaultInfo()
         end
     end
     
+    _dataCache.greatVault = data
     return data
 end
 
 -- Currency info
 function addon:GetCurrencyInfo(currencyID)
+    local cacheKey = "currency_" .. currencyID
+    local cached = _dataCache[cacheKey]
+    if cached ~= nil then return cached ~= CACHE_NIL and cached or nil end
+
     local info = C_CurrencyInfo.GetCurrencyInfo(currencyID)
     if info then
         local maxQty = info.maxQuantity or 0
@@ -233,19 +265,21 @@ function addon:GetCurrencyInfo(currencyID)
                 end
             end
         end
-        return {
+        local result = {
             quantity = info.quantity or 0,
             maxQuantity = maxQty,
             totalEarned = info.totalEarned or 0,
             useTotalEarnedForMaxQty = info.useTotalEarnedForMaxQty,
             iconFileID = info.iconFileID,
         }
+        _dataCache[cacheKey] = result
+        return result
     end
 
     local itemCount = C_Item.GetItemCount(currencyID, true, false, true, true)
     if itemCount and itemCount > 0 then
         local name, _, icon = C_Item.GetItemInfo(currencyID)
-        return {
+        local result = {
             quantity = itemCount,
             maxQuantity = 0,
             totalEarned = itemCount,
@@ -253,17 +287,24 @@ function addon:GetCurrencyInfo(currencyID)
             iconFileID = icon,
             name = name,
         }
+        _dataCache[cacheKey] = result
+        return result
     end
 
+    _dataCache[cacheKey] = CACHE_NIL
     return nil
 end
 
 -- Renown progress
 function addon:GetProgressInfo(progressID)
+    local cacheKey = "progress_" .. progressID
+    local cached = _dataCache[cacheKey]
+    if cached ~= nil then return cached ~= CACHE_NIL and cached or nil end
+
     local majorData = C_MajorFactions.GetMajorFactionData(progressID)
     if majorData then
         local isMaxed = C_MajorFactions.HasMaximumRenown(progressID)
-        return {
+        local result = {
             name = majorData.name,
             renownLevel = majorData.renownLevel or 0,
             renownReputationEarned = majorData.renownReputationEarned or 0,
@@ -271,18 +312,25 @@ function addon:GetProgressInfo(progressID)
             isMaxed = isMaxed,
             isRenown = true
         }
+        _dataCache[cacheKey] = result
+        return result
     end
 
+    _dataCache[cacheKey] = CACHE_NIL
     return nil
 end
 
 -- Faction reputation info
 function addon:GetReputationInfo(repID)
+    local cacheKey = "rep_" .. repID
+    local cached = _dataCache[cacheKey]
+    if cached ~= nil then return cached ~= CACHE_NIL and cached or nil end
+
     -- 1. Renown
     local majorData = C_MajorFactions.GetMajorFactionData(repID)
     if majorData then
         local isMaxed = C_MajorFactions.HasMaximumRenown(repID)
-        return {
+        local result = {
             name = majorData.name,
             renownLevel = majorData.renownLevel or 0,
             renownReputationEarned = majorData.renownReputationEarned or 0,
@@ -290,6 +338,8 @@ function addon:GetReputationInfo(repID)
             isMaxed = isMaxed,
             isRenown = true
         }
+        _dataCache[cacheKey] = result
+        return result
     end
     
     -- 2. Friendship
@@ -305,7 +355,7 @@ function addon:GetReputationInfo(repID)
             max = friendshipData.nextThreshold - friendshipData.reactionThreshold
         end
         
-        return {
+        local result = {
             name = friendshipData.name,
             label = friendshipData.reaction, -- e.g. 'Acquaintance'
             renownReputationEarned = current,
@@ -313,6 +363,8 @@ function addon:GetReputationInfo(repID)
             isMaxed = isMaxed,
             isFriend = true
         }
+        _dataCache[cacheKey] = result
+        return result
     end
 
     -- 3. Standard
@@ -332,7 +384,7 @@ function addon:GetReputationInfo(repID)
         local label = _G["FACTION_STANDING_LABEL" .. repData.reaction] or repData.reaction
         
         local isFirstRank = repData.currentReactionThreshold == 0
-        return {
+        local result = {
             name = repData.name,
             label = label,
             reaction = repData.reaction,
@@ -342,8 +394,11 @@ function addon:GetReputationInfo(repID)
             isStandard = true,
             isFirstRank = isFirstRank,
         }
+        _dataCache[cacheKey] = result
+        return result
     end
     
+    _dataCache[cacheKey] = CACHE_NIL
     return nil
 end
 
@@ -398,19 +453,20 @@ function addon:GetEventTiming(eventKey)
         alertEnabled = eventAlerts[event.alert] or false
     end
 
-    return {
-        active = active,
-        remaining = remaining,
-        next = next,
-        duration = active and duration or (interval - duration),
-        expirationTime = GetTime() + remaining,
-        color = event.color,
-        alert = alertEnabled,
-    }
+    _timingResult.active         = active
+    _timingResult.remaining      = remaining
+    _timingResult.next           = next
+    _timingResult.duration       = active and duration or (interval - duration)
+    _timingResult.expirationTime = GetTime() + remaining
+    _timingResult.color          = event.color
+    _timingResult.alert          = alertEnabled
+    return _timingResult
 end
 
 -- Weekly quest status
 function addon:GetWeeklyQuestInfo()
+    if _dataCache.weeklyQuests then return _dataCache.weeklyQuests end
+
     local quests = {}
     for _, quest in ipairs(self.weeklyDB) do
         if quest.isWeekend and not self:IsWithinWeekendWindow() then
@@ -463,12 +519,14 @@ function addon:GetWeeklyQuestInfo()
                 end
                 
             elseif quest.questType == "multiple" then
-                local totalRequired = #questIDs
+                local totalRequired = (type(quest.max) == "number") and quest.max or #questIDs
                 for _, qid in ipairs(questIDs) do
                     if self:IsQuestComplete(qid) then
                         completed = completed + 1
                     end
                 end
+
+                if completed > totalRequired then completed = totalRequired end
                 isComplete = (completed >= totalRequired)
                 info = completed .. "/" .. totalRequired
             end
@@ -485,43 +543,78 @@ function addon:GetWeeklyQuestInfo()
         end
     end
     
+    _dataCache.weeklyQuests = quests
+
+    -- Sort once here so UpdateWeeklySection never needs to sort the cached table
+    table.sort(quests, function(a, b)
+        local catA = a.category or "general"
+        local catB = b.category or "general"
+        local infoA = addon.categoryInfo and addon.categoryInfo[catA]
+        local infoB = addon.categoryInfo and addon.categoryInfo[catB]
+        local orderA = infoA and infoA.order or 99
+        local orderB = infoB and infoB.order or 99
+        if orderA ~= orderB then return orderA < orderB end
+        return a.name < b.name
+    end)
+
     return quests
 end
 
 -- Rare NPC data
 function addon:GetRareInfo(currentZone)
+    local resolvedZone = currentZone
+    if currentZone and addon.zoneAliases then
+        resolvedZone = addon.zoneAliases[currentZone] or currentZone
+    end
+    local cacheKey = "rares_" .. (resolvedZone or "_all")
+    if _dataCache[cacheKey] then return _dataCache[cacheKey] end
+
     local rares = {}
     
     for _, rare in ipairs(self.raresDB) do
         local match = true
-        if currentZone then
-            match = (rare.zone == currentZone) or 
-                   (string.find(currentZone, rare.zone, 1, true)) or 
-                   (string.find(rare.zone, currentZone, 1, true))
+        if resolvedZone then
+            match = (rare.zone == resolvedZone) or 
+                   (string.find(resolvedZone, rare.zone, 1, true)) or 
+                   (string.find(rare.zone, resolvedZone, 1, true))
+        end
+        -- skip based on faction flag if present
+        if match and rare.faction then
+            local playerFaction = UnitFactionGroup("player")
+            if rare.faction ~= playerFaction then
+                match = false
+            end
         end
         
         if match then
             local isComplete = self:IsQuestComplete(rare.questID)
+            local isRepComplete = rare.repQuestID and self:IsQuestComplete(rare.repQuestID) or false
             
             table.insert(rares, {
                 expansion = rare.expansion,
                 name = rare.name,
                 npcID = rare.npcID,
                 questID = rare.questID,
+                repQuestID = rare.repQuestID,
                 zone = rare.zone,
+                faction = rare.faction,
                 x = rare.x,
                 y = rare.y,
                 isComplete = isComplete,
+                isRepComplete = isRepComplete,
                 phaseDivingRequired = rare.phaseDivingRequired or false,
             })
         end
     end
     
+    _dataCache[cacheKey] = rares
     return rares
 end
 
 -- Bountiful delves
 function addon:GetBountifulDelveInfo()
+    if _dataCache.bountifulDelves then return _dataCache.bountifulDelves end
+
     local delves = {}
     local zoneMap = addon.zoneIDs or {}
     
@@ -542,6 +635,7 @@ function addon:GetBountifulDelveInfo()
         end
     end
     
+    _dataCache.bountifulDelves = delves
     return delves
 end
 
@@ -690,6 +784,20 @@ function addon:ValidateImportCode(payload)
 end
 
 -- Init saved variables
+local function GetAccountProfiles()
+    if not HomeworkTrackerAccountDB then
+        HomeworkTrackerAccountDB = {}
+    end
+    if type(HomeworkTrackerAccountDB.__profiles) ~= "table" then
+        HomeworkTrackerAccountDB.__profiles = {}
+    end
+    return HomeworkTrackerAccountDB.__profiles
+end
+
+local function GetCharKey()
+    return UnitName("player") .. "-" .. GetRealmName()
+end
+
 function addon:InitializeSavedVariables()
     if not HomeworkTrackerDB then
         HomeworkTrackerDB = {}
@@ -697,19 +805,29 @@ function addon:InitializeSavedVariables()
 
     local defaults = addon.defaults or {}
 
-
-    -- Init profiles
-    if type(HomeworkTrackerDB.__profiles) ~= "table" then
-        HomeworkTrackerDB.__profiles = {}
-        HomeworkTrackerDB.__activeProfile = "Default"
+    -- Migrate old per-character profiles if present
+    local acct = HomeworkTrackerAccountDB or {}
+    if HomeworkTrackerDB.__profiles and not acct.__profiles then
+        acct.__profiles = HomeworkTrackerDB.__profiles
+        HomeworkTrackerDB.__profiles = nil
     end
+    HomeworkTrackerAccountDB = acct
+    HomeworkTrackerDB.__charActive = HomeworkTrackerDB.__charActive or {}
 
-    -- Validate active profile
-    if type(HomeworkTrackerDB.__activeProfile) ~= "string"
-        or not HomeworkTrackerDB.__profiles[HomeworkTrackerDB.__activeProfile] then
-        HomeworkTrackerDB.__activeProfile = "Default"
-        HomeworkTrackerDB.__profiles["Default"] = HomeworkTrackerDB.__profiles["Default"] or {}
+    -- Determine active profile for this character
+    local char = GetCharKey()
+    local profiles = GetAccountProfiles()
+    local active = HomeworkTrackerDB.__charActive[char] or HomeworkTrackerDB.__activeProfile or "Default"
+    if type(active) ~= "string" or not profiles[active] then
+        active = "Default"
+        profiles[active] = profiles[active] or {}
     end
+    HomeworkTrackerDB.__activeProfile = active
+    HomeworkTrackerDB.__charActive[char] = active
+
+    -- Account-wide profiles table
+    local profiles = GetAccountProfiles()
+    profiles["Default"] = profiles["Default"] or {}
 
     local activeProfile = HomeworkTrackerDB.__activeProfile
     local hasRuntimeData = false
@@ -720,18 +838,17 @@ function addon:InitializeSavedVariables()
         end
     end
     if hasRuntimeData then
-        HomeworkTrackerDB.__profiles[activeProfile] = CaptureProfileData()
+        profiles[activeProfile] = CaptureProfileData()
     end
 
-
-    ApplyProfileData(HomeworkTrackerDB.__profiles[activeProfile])
+    ApplyProfileData(profiles[activeProfile])
 
     -- Lock module order
     EnsureDefaultModuleOrder()
 
 
     -- Apply defaults
-    local activeProfileData = HomeworkTrackerDB.__profiles[HomeworkTrackerDB.__activeProfile]
+    local activeProfileData = GetAccountProfiles()[HomeworkTrackerDB.__activeProfile]
     local skipDefaults = activeProfileData and activeProfileData.__noDefaults
     if not skipDefaults then
         for k, v in pairs(defaults) do
@@ -809,7 +926,7 @@ function addon:InitializeSavedVariables()
         end
     end
 
-    HomeworkTrackerDB.__profiles[HomeworkTrackerDB.__activeProfile] = CaptureProfileData()
+    GetAccountProfiles()[HomeworkTrackerDB.__activeProfile] = CaptureProfileData()
 end
 
 -- Active profile name
@@ -823,37 +940,48 @@ end
 -- All profile names
 function addon:GetProfileNames()
     local out = {}
-    if HomeworkTrackerDB and type(HomeworkTrackerDB.__profiles) == "table" then
-        for name in pairs(HomeworkTrackerDB.__profiles) do
-            table.insert(out, name)
-        end
-        table.sort(out)
+    local profiles = GetAccountProfiles()
+    for name in pairs(profiles) do
+        table.insert(out, name)
     end
+    table.sort(out)
     return out
 end
 
 -- Save active profile
 function addon:SaveActiveProfile()
-    if not HomeworkTrackerDB or type(HomeworkTrackerDB.__profiles) ~= "table" then return end
+    local profiles = GetAccountProfiles()
+    if type(profiles) ~= "table" then return end
     local active = self:GetActiveProfileName()
     local data = CaptureProfileData()
-    local stored = HomeworkTrackerDB.__profiles[active]
+    local stored = profiles[active]
     if stored and stored.__noDefaults then
         data.__noDefaults = true
     end
-    HomeworkTrackerDB.__profiles[active] = data
+    profiles[active] = data
+    HomeworkTrackerDB.__charActive = HomeworkTrackerDB.__charActive or {}
+    HomeworkTrackerDB.__charActive[GetCharKey()] = active
 end
 
 -- Switch profile
 function addon:SwitchProfile(name)
     if type(name) ~= "string" or name == "" then return false, "Invalid profile name" end
-    if not HomeworkTrackerDB.__profiles[name] then return false, "Profile not found" end
+    local profiles = GetAccountProfiles()
+    if not profiles[name] then return false, "Profile not found" end
     if HomeworkTrackerDB.__activeProfile == name then return true end
 
-    self:SaveActiveProfile()
+    -- Avoid overwriting a shared profile owned by another character
+    local char = GetCharKey()
+    if HomeworkTrackerDB.__charActive and HomeworkTrackerDB.__charActive[char] == HomeworkTrackerDB.__activeProfile then
+        self:SaveActiveProfile()
+    end
+
     HomeworkTrackerDB.__activeProfile = name
-    ApplyProfileData(HomeworkTrackerDB.__profiles[name])
-    self:InitializeSavedVariables()    
+    HomeworkTrackerDB.__charActive = HomeworkTrackerDB.__charActive or {}
+    HomeworkTrackerDB.__charActive[char] = name
+
+    ApplyProfileData(profiles[name])
+    self:InitializeSavedVariables()
 
     if self.UpdateLayout then
         self:UpdateLayout()
@@ -868,7 +996,8 @@ function addon:CreateProfile(name)
     if type(name) ~= "string" then return false, "Invalid profile name" end
     name = string.match(name, "^%s*(.-)%s*$") or ""
     if name == "" then return false, "Profile name is empty" end
-    if HomeworkTrackerDB.__profiles[name] then return false, "Profile already exists" end
+    local profiles = GetAccountProfiles()
+    if profiles[name] then return false, "Profile already exists" end
 
     local newProfile = DeepCopy(addon.defaults or {})
 
@@ -879,7 +1008,7 @@ function addon:CreateProfile(name)
 
     newProfile.categoryOrder = nil
 
-    HomeworkTrackerDB.__profiles[name] = newProfile
+    profiles[name] = newProfile
     return true
 end
 
@@ -892,12 +1021,13 @@ function addon:CopyProfile(sourceName, targetName)
     targetName = string.match(targetName, "^%s*(.-)%s*$") or ""
     if sourceName == "" or targetName == "" then return false, "Profile name is empty" end
 
-    local source = (sourceName == self:GetActiveProfileName()) and CaptureProfileData() or HomeworkTrackerDB.__profiles[sourceName]
+    local profiles = GetAccountProfiles()
+    local source = (sourceName == self:GetActiveProfileName()) and CaptureProfileData() or profiles[sourceName]
     if not source then return false, "Source profile not found" end
-    HomeworkTrackerDB.__profiles[targetName] = DeepCopy(source)
+    profiles[targetName] = DeepCopy(source)
 
     if HomeworkTrackerDB.__activeProfile == targetName then
-        ApplyProfileData(HomeworkTrackerDB.__profiles[targetName])
+        ApplyProfileData(profiles[targetName])
         self:InitializeSavedVariables()
         if self.UpdateLayout then
             self:UpdateLayout()
@@ -912,9 +1042,11 @@ function addon:DeleteProfile(name)
     if type(name) ~= "string" or name == "" then return false, "Invalid profile name" end
     if name == "Default" then return false, "Cannot delete Default profile" end
     if HomeworkTrackerDB.__activeProfile == name then return false, "Cannot delete active profile" end
-    if not HomeworkTrackerDB.__profiles[name] then return false, "Profile not found" end
+    local profiles = GetAccountProfiles()
+    if not profiles[name] then return false, "Profile not found" end
 
-    HomeworkTrackerDB.__profiles[name] = nil
+    local profiles = GetAccountProfiles()
+    profiles[name] = nil
     return true
 end
 
@@ -925,7 +1057,8 @@ function addon:ExportProfile(name)
     if profileName == self:GetActiveProfileName() then
         profile = CaptureProfileData()
     else
-        profile = HomeworkTrackerDB.__profiles and HomeworkTrackerDB.__profiles[profileName]
+        local profiles = GetAccountProfiles()
+        profile = profiles[profileName]
     end
     if not profile then return nil, "Profile not found" end
     return EncodePayload(SerializeValue(profile))
@@ -942,12 +1075,13 @@ function addon:ImportProfile(name, payload)
 
     local parsed, err = DeserializeTable(decoded)
     if not parsed then return false, err end
-    HomeworkTrackerDB.__profiles[name] = DeepCopy(parsed)
+    local profiles = GetAccountProfiles()
+    profiles[name] = DeepCopy(parsed)
     -- Keep imported values
-    HomeworkTrackerDB.__profiles[name].__noDefaults = true
+    profiles[name].__noDefaults = true
 
     if HomeworkTrackerDB.__activeProfile == name then
-        ApplyProfileData(HomeworkTrackerDB.__profiles[name])
+        ApplyProfileData(profiles[name])
         if self.UpdateLayout then
             self:UpdateLayout()
         end

@@ -24,18 +24,22 @@ addon:RegisterDatabaseInit("general", function()
     -- Add crest currencies
     addon.crestDB = addon.crestDB or {}
     local dawnCrests = {
-        { name = "Veteran Dawncrest", id = 3341, icon = 7639525, cap = 120 },
-        { name = "Champion Dawncrest", id = 3343, icon = 7639519, cap = 120 },
-        { name = "Hero Dawncrest", id = 3345, icon = 7639521, cap = 120 },
+        { name = "Adventurer Dawncrest", id = 3383, icon = 7639517, cap = 120 },
+        { name = "Veteran Dawncrest",    id = 3341, icon = 7639525, cap = 120 },
+        { name = "Champion Dawncrest",   id = 3343, icon = 7639519, cap = 120 },
+        { name = "Hero Dawncrest",       id = 3345, icon = 7639521, cap = 120 },
+        { name = "Myth Dawncrest",       id = 3347, icon = 7639523, cap = 120 },
     }
     for _, v in ipairs(dawnCrests) do table.insert(addon.crestDB, v) end
 
     -- Initialize default database settings
     if addon.defaults then
         addon.defaults.crests = addon.defaults.crests or { enable = true }
-        addon.defaults.crests.showHero = true
-        addon.defaults.crests.showChampion = true
+        addon.defaults.crests.showAdventurer = true
         addon.defaults.crests.showVeteran = true
+        addon.defaults.crests.showChampion = true
+        addon.defaults.crests.showHero = true
+        addon.defaults.crests.showMyth = true
 
         addon.defaults.currency = addon.defaults.currency or { enable = true }
         addon.defaults.currency[3363] = true
