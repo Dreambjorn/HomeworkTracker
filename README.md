@@ -48,7 +48,7 @@ The tracker can be freely moved by dragging the header. Resize it to fit your UI
 
 **Q: Can I hide or minimize the tracker?**
 
-**A:** Yes! You can minimize the tracker by clicking on the header or hide it using the `/hw toggle` command.
+**A:** Yes! You can minimize the tracker by clicking on the header or hide it using the `/hw toggle` command or clicking on the minimap icon.
 
 <br>
 
