@@ -12,6 +12,8 @@
 libs\LibStub\LibStub.lua
 libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
 libs\LibSharedMedia-3.0\LibSharedMedia-3.0.lua
+libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
+libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
 
 ## --- Initialization --------------------------------------------------
 DBInitializer.lua
@@ -23,6 +25,7 @@ Database\Midnight.lua
 
 ## --- Core --------------------------------------------------
 Util.lua
+MinimapButton.lua
 Core.lua
 Modules.lua
 UI.lua

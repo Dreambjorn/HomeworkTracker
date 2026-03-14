@@ -8,7 +8,6 @@ addon:RegisterDatabaseInit("theWarWithin", function()
         addon.defaults.currency = addon.defaults.currency or { enable = true }
         local currencyDefaults = {
             [2815] = true,  -- Resonance Crystals
-            [3310] = false, -- Coffer Key Shards
             [3303] = false, -- Untethered Coin
             [3056] = false, -- Kej
             [3055] = false, -- Mereldar Derby Mark

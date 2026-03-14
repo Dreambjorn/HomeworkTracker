@@ -87,6 +87,25 @@ function addon:GetBarTexture()
     return nil
 end
 
+-- Minimap button saved-var helpers
+function addon:IsMinimapButtonEnabled()
+    if HomeworkTrackerDB and HomeworkTrackerDB.showMinimapButton ~= nil then
+        return HomeworkTrackerDB.showMinimapButton
+    end
+    if addon.defaults and addon.defaults.showMinimapButton ~= nil then
+        return addon.defaults.showMinimapButton
+    end
+    return true
+end
+
+function addon:SetMinimapButtonEnabled(val)
+    HomeworkTrackerDB = HomeworkTrackerDB or {}
+    HomeworkTrackerDB.showMinimapButton = not not val
+    if addon.UpdateMinimapButtonVisibility then
+        addon:UpdateMinimapButtonVisibility()
+    end
+end
+
 -- Check font availability
 function addon:IsFontAvailable(fontKey)
     if not fontKey or not LSM then return false end
@@ -611,6 +630,11 @@ function addon:GetRareInfo(currentZone)
     return rares
 end
 
+-- Delve check using party walk‑in flag
+function addon:IsInDelve()
+    return C_PartyInfo.IsPartyWalkIn and C_PartyInfo.IsPartyWalkIn()
+end
+
 -- Bountiful delves
 function addon:GetBountifulDelveInfo()
     if _dataCache.bountifulDelves then return _dataCache.bountifulDelves end
@@ -812,18 +836,15 @@ function addon:InitializeSavedVariables()
         HomeworkTrackerDB.__profiles = nil
     end
     HomeworkTrackerAccountDB = acct
-    HomeworkTrackerDB.__charActive = HomeworkTrackerDB.__charActive or {}
 
-    -- Determine active profile for this character
-    local char = GetCharKey()
+    -- Determine active profile
     local profiles = GetAccountProfiles()
-    local active = HomeworkTrackerDB.__charActive[char] or HomeworkTrackerDB.__activeProfile or "Default"
+    local active = HomeworkTrackerDB.__activeProfile or "Default"
     if type(active) ~= "string" or not profiles[active] then
         active = "Default"
         profiles[active] = profiles[active] or {}
     end
     HomeworkTrackerDB.__activeProfile = active
-    HomeworkTrackerDB.__charActive[char] = active
 
     -- Account-wide profiles table
     local profiles = GetAccountProfiles()
@@ -894,7 +915,6 @@ function addon:InitializeSavedVariables()
         end
     end
 
-
     if not skipDefaults and not HomeworkTrackerDB.moduleOrder and addon.defaultModuleOrder then
         HomeworkTrackerDB.moduleOrder = DeepCopy(addon.defaultModuleOrder)
     end
@@ -959,8 +979,6 @@ function addon:SaveActiveProfile()
         data.__noDefaults = true
     end
     profiles[active] = data
-    HomeworkTrackerDB.__charActive = HomeworkTrackerDB.__charActive or {}
-    HomeworkTrackerDB.__charActive[GetCharKey()] = active
 end
 
 -- Switch profile
@@ -970,15 +988,9 @@ function addon:SwitchProfile(name)
     if not profiles[name] then return false, "Profile not found" end
     if HomeworkTrackerDB.__activeProfile == name then return true end
 
-    -- Avoid overwriting a shared profile owned by another character
-    local char = GetCharKey()
-    if HomeworkTrackerDB.__charActive and HomeworkTrackerDB.__charActive[char] == HomeworkTrackerDB.__activeProfile then
-        self:SaveActiveProfile()
-    end
-
+    -- Persist current active profile to account storage, then switch
+    self:SaveActiveProfile()
     HomeworkTrackerDB.__activeProfile = name
-    HomeworkTrackerDB.__charActive = HomeworkTrackerDB.__charActive or {}
-    HomeworkTrackerDB.__charActive[char] = name
 
     ApplyProfileData(profiles[name])
     self:InitializeSavedVariables()

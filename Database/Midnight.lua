@@ -7,14 +7,17 @@ addon:RegisterDatabaseInit("midnight", function()
         -- Currency defaults
         addon.defaults.currency = addon.defaults.currency or { enable = true }
         local currencyDefaults = {
-            [3316] = true,  -- Voidlight Marl
-            [3392] = true,  -- Remnant of Anguish
-            [3376] = true,  -- Shard of Dundun
-            [3379] = true,  -- Brimming Arcana
-            [3377] = true,  -- Unalloyed Abundance
-            [3385] = true,  -- Luminous Dust
-            [259361] = true, -- Vile Essence
-            [255826] = true, -- Mysterious Skyshards
+            [3316] =   true,   -- Voidlight Marl
+            [3392] =   true,   -- Remnant of Anguish
+            [3212] =   true,   -- Radiant Spark Dust
+            [3378] =   true,   -- Dawnlight Manaflux
+            [3356] =   false,  -- Untainted Mana-Crystals
+            [3379] =   false,  -- Brimming Arcana
+            [3376] =   true,   -- Shard of Dundun
+            [3377] =   true,   -- Unalloyed Abundance
+            [3385] =   true,   -- Luminous Dust
+            [259361] = true,   -- Vile Essence
+            [255826] = true,   -- Mysterious Skyshards
         }
         for id, val in pairs(currencyDefaults) do
             addon.defaults.currency[id] = val
@@ -152,9 +155,17 @@ addon:RegisterDatabaseInit("midnight", function()
 
     -- Weekly quests
     local midnightWeekly = {
-        { name = "Prey Hunts", questID = {91095,91096,91097,91098,91099,91100,91101,91102,91103,91104,
+        { name = "Prey Hunts", questID = {
+                                        91095,91096,91097,91098,91099,91100,91101,91102,91103,91104,
                                         91105,91106,91107,91108,91109,91110,91111,91112,91113,91114,
-                                        91115,91116,91117,91118,91119,91120,91121,91122,91123,91124},
+                                        91115,91116,91117,91118,91119,91120,91121,91122,91123,91124,
+                                        91210,91211,91212,91213,91214,91215,91216,91217,91218,91219,
+                                        91220,91221,91222,91223,91224,91225,91226,91227,91228,91229,
+                                        91230,91231,91232,91233,91234,91235,91236,91237,91238,91239,
+                                        91240,91241,91242,91243,91244,91245,91246,91247,91248,91249,
+                                        91250,91251,91252,91253,91254,91255,91256,91257,91258,91259,
+                                        91260,91261,91262,91263,91264,91265,91266,91267,91268,91269
+                                    },
           questType = "multiple", isWeekend = false, category = "general", max = 4 },
         { name = "World Boss", questID = {92636, 92560, 92034, 92123}, questType = "single", isWeekend = false, category = "general", 
           bossNames = {[92636] = "Predaxas", [92560] = "Lu'ashal", [92034] = "Thorm'belan", [92123] = "Cragpine"} },
@@ -279,6 +290,9 @@ addon:RegisterDatabaseInit("midnight", function()
         -- General
         { name = "Voidlight Marl", id = 3316, icon = 7137586 },
         { name = "Remnant of Anguish", id = 3392, icon = 4554435 },
+        { name = "Radiant Spark Dust", id = 3212, icon = 5929578 },
+        { name = "Dawnlight Manaflux", id = 3378, icon = 4622294 },
+        { name = "Untainted Mana-Crystals", id = 3356, icon = 132849 },
 
         -- Eversong Wood
         { name = "Brimming Arcana", id = 3379, icon = 132849 },

@@ -5,13 +5,15 @@ addon:RegisterDatabaseInit("general", function()
     -- Initialize global currencies
     addon.currencyDB = addon.currencyDB or {}
     table.insert(addon.currencyDB, { name = "Community Coupons", id = 3363, icon = 134495 })
-
+    table.insert(addon.currencyDB, { name = "Restored Coffer Key", id = 3028, icon = 4622270 })
+    table.insert(addon.currencyDB, { name = "Coffer Key Shards", id = 3310, icon = 133016, max = 600 })
+    table.insert(addon.currencyDB, { name = "Undercoin", id = 2803, icon = 133858 })
     -- Define global categories
     addon.categoryInfo = addon.categoryInfo or {}
-    -- Set fallback order for season progress
-    addon.categoryInfo["seasonProgress"] = { color = {0.5,0.5,0.5} }
 
-    -- Add general progress trackers
+    -- Set color for season progress
+    addon.categoryInfo["seasonProgress"] = { color = {0.5,0.5,0.5} }
+    -- Add season progress trackers
     addon.progressDB = addon.progressDB or {}
     local generalProgress = {
         { name = "Delves: Season 1", id = 2742, category = "seasonProgress", order = 1 },
@@ -40,8 +42,10 @@ addon:RegisterDatabaseInit("general", function()
         addon.defaults.crests.showChampion = true
         addon.defaults.crests.showHero = true
         addon.defaults.crests.showMyth = true
-
         addon.defaults.currency = addon.defaults.currency or { enable = true }
-        addon.defaults.currency[3363] = true
+        addon.defaults.currency[3363] = true  -- Community Coupons
+        addon.defaults.currency[3028] = true  -- Restored Coffer Key
+        addon.defaults.currency[3310] = false -- Coffer Key Shards
+        addon.defaults.currency[2803] = true  -- Undercoin
     end
 end)

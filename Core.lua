@@ -22,6 +22,7 @@ local defaults = {
     enabled = true,
         hideInParty = false,
         hideInRaid = false,
+        hideInCombat = false,
         width = 280,
         height = 400,
     scale = 1.4,
@@ -43,6 +44,7 @@ local defaults = {
     progress = { enable = true, hidden = {}, levels = {} },
     expansions = { theWarWithin = true, midnight = true },
     ui = { selectedExpansion = "midnight" },
+    showMinimapButton = true,
     barTexture = nil,
     font = "Friz Quadrata TT",
     fontSize = 11,
@@ -52,6 +54,7 @@ local defaults = {
     headerFontOutline = "OUTLINE",
     colors = addon.defaultColors,
     minimized = false,
+    hideTitleText = false,
 }
 
 addon.defaults = defaults
@@ -77,10 +80,11 @@ end
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_LOGIN")
-
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
+eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
+eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:RegisterEvent("QUEST_TURNED_IN")
 eventFrame:RegisterEvent("QUEST_LOG_UPDATE")
 eventFrame:RegisterEvent("CURRENCY_DISPLAY_UPDATE")
@@ -89,23 +93,24 @@ eventFrame:RegisterEvent("MAJOR_FACTION_RENOWN_LEVEL_CHANGED")
 eventFrame:RegisterEvent("UPDATE_FACTION")
 eventFrame:RegisterEvent("AREA_POIS_UPDATED")
 eventFrame:RegisterEvent("BAG_UPDATE_DELAYED")
+eventFrame:RegisterEvent("WALK_IN_DATA_UPDATE")
+eventFrame:RegisterEvent("PLAYER_LOGOUT")
 
 eventFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" and ... == addonName then
         addon:RunDatabaseInit()
         addon:InitializeSavedVariables()
         addon:CreateUI()
-        
-        if addon.CheckInstanceState then addon:CheckInstanceState() end
+        if addon.CheckVisibilityState then addon:CheckVisibilityState() end
     elseif event == "PLAYER_LOGIN" then
-        if addon.CheckInstanceState then addon:CheckInstanceState() end
+        if addon.CheckVisibilityState then addon:CheckVisibilityState() end
         if addon.UpdateDisplay then addon:UpdateDisplay() end
-    elseif event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
+    elseif event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" or event == "WALK_IN_DATA_UPDATE" then
         if addon.InvalidateDataCache then addon:InvalidateDataCache() end
-        if addon.CheckInstanceState then addon:CheckInstanceState() end
+        if addon.CheckVisibilityState then addon:CheckVisibilityState() end
         if addon.UpdateDisplay then addon:UpdateDisplay() end
-    elseif event == "GROUP_ROSTER_UPDATE" then
-        if addon.CheckInstanceState then addon:CheckInstanceState() end
+    elseif event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then
+        if addon.CheckVisibilityState then addon:CheckVisibilityState() end
     elseif event == "QUEST_TURNED_IN" or event == "QUEST_LOG_UPDATE"
         or event == "CURRENCY_DISPLAY_UPDATE"
         or event == "WEEKLY_REWARDS_UPDATE" or event == "MAJOR_FACTION_RENOWN_LEVEL_CHANGED"
@@ -113,5 +118,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         or event == "BAG_UPDATE_DELAYED" then
         if addon.InvalidateDataCache then addon:InvalidateDataCache() end
         if addon.UpdateDisplay then addon:UpdateDisplay() end
+    elseif event == "PLAYER_LOGOUT" then
+        if addon.SaveActiveProfile then addon:SaveActiveProfile() end
     end
 end)

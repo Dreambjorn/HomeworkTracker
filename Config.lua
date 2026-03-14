@@ -701,7 +701,6 @@ end
 local function BuildTab_Profiles(parent)
     local y = -10
 
-
     local function EnsureCodePopup()
         if addon.profileCodePopup then return addon.profileCodePopup end
 
@@ -1082,6 +1081,23 @@ local function BuildTab_General(parent)
     cb1:SetPoint("TOPLEFT", 30, y)
     cb1.check:SetChecked(HomeworkTrackerDB.enabled)
     addon._enabledCheckbox = cb1
+    y = y - SMALL_GAP - 14
+
+    local cbMinimap = CreateCheckbox(parent, "Show minimap button", function(val)
+        if addon.SetMinimapButtonEnabled then
+            addon:SetMinimapButtonEnabled(val)
+        else
+            HomeworkTrackerDB = HomeworkTrackerDB or {}
+            HomeworkTrackerDB.showMinimapButton = val
+            if addon.UpdateMinimapButtonVisibility then addon:UpdateMinimapButtonVisibility() end
+        end
+    end)
+    cbMinimap:SetPoint("TOPLEFT", 30, y)
+    if addon.IsMinimapButtonEnabled then
+        cbMinimap.check:SetChecked(addon:IsMinimapButtonEnabled())
+    else
+        cbMinimap.check:SetChecked(HomeworkTrackerDB.showMinimapButton ~= false)
+    end
     y = y - BIG_GAP + 10
 
 
@@ -1098,7 +1114,7 @@ local function BuildTab_General(parent)
 
     local cbHideParty = CreateCheckbox(parent, "Hide while in a party", function(val)
         HomeworkTrackerDB.hideInParty = val
-        if addon.CheckInstanceState then addon:CheckInstanceState() end
+        if addon.CheckVisibilityState then addon:CheckVisibilityState() end
     end)
     cbHideParty:SetPoint("TOPLEFT", 30, y)
     cbHideParty.check:SetChecked(HomeworkTrackerDB.hideInParty)
@@ -1106,10 +1122,18 @@ local function BuildTab_General(parent)
 
     local cbHideRaid = CreateCheckbox(parent, "Hide while in a raid", function(val)
         HomeworkTrackerDB.hideInRaid = val
-        if addon.CheckInstanceState then addon:CheckInstanceState() end
+        if addon.CheckVisibilityState then addon:CheckVisibilityState() end
     end)
     cbHideRaid:SetPoint("TOPLEFT", 30, y)
     cbHideRaid.check:SetChecked(HomeworkTrackerDB.hideInRaid)
+    y = y - SMALL_GAP - 14
+
+    local cbHideCombat = CreateCheckbox(parent, "Hide while in combat", function(val)
+        HomeworkTrackerDB.hideInCombat = val
+        if addon.CheckVisibilityState then addon:CheckVisibilityState() end
+    end)
+    cbHideCombat:SetPoint("TOPLEFT", 30, y)
+    cbHideCombat.check:SetChecked(HomeworkTrackerDB.hideInCombat)
     y = y - BIG_GAP + 10
     
     local hExp = CreateHeader(parent, "Expansions")
@@ -1394,7 +1418,7 @@ local function BuildTab_Appearance(parent)
         y = y - BIG_GAP - 5
     end
 
-    local hFonts = CreateHeader(parent, "Main Text")
+    local hFonts = CreateHeader(parent, "Bar Text")
     hFonts:SetPoint("TOPLEFT", 10, y)
     y = y - BIG_GAP + 10
 
@@ -1460,6 +1484,19 @@ local function BuildTab_Appearance(parent)
     slHeader.slider:SetValue(HomeworkTrackerDB.headerFontSize or 14)
     y = y - BIG_GAP - 10
 
+    -- Tracker header options
+    local hTitleBar = CreateHeader(parent, "Tracker Header")
+    hTitleBar:SetPoint("TOPLEFT", 10, y)
+    y = y - BIG_GAP + 10
+
+    local cbHideTitle = CreateCheckbox(parent, "Hide Tracker Title", function(val)
+        HomeworkTrackerDB.hideTitleText = val
+        addon:RefreshTitleBar()
+    end)
+    cbHideTitle:SetPoint("TOPLEFT", 30, y)
+    cbHideTitle.check:SetChecked(HomeworkTrackerDB.hideTitleText or false)
+    y = y - SMALL_GAP - 14
+
     local hColors = CreateHeader(parent, "Colors")
     hColors:SetPoint("TOPLEFT", 10, y)
     y = y - BIG_GAP + 10
@@ -1497,7 +1534,6 @@ local function BuildTab_Appearance(parent)
         colors.headerText[1], colors.headerText[2], colors.headerText[3])
     cpHdr:SetPoint("TOPLEFT", 30, y)
     y = y - SMALL_GAP - 14
-
 
 
     local hasEnabledExpansion = false
@@ -1823,7 +1859,7 @@ local function BuildTab_Appearance(parent)
                 dragFrame:SetScript("OnUpdate", onDragUpdate)
             end
 
-            stopDrag = function(f)
+                stopDrag = function(f)
                 f:StopMovingOrSizing()
                 dragFrame:SetScript("OnUpdate", nil)
                 dragFrame:Hide()
@@ -1877,13 +1913,14 @@ local function BuildTab_Appearance(parent)
         HomeworkTrackerDB.headerFont = addon.defaults.headerFont
         HomeworkTrackerDB.headerFontSize = addon.defaults.headerFontSize
         HomeworkTrackerDB.headerFontOutline = addon.defaults.headerFontOutline
+        HomeworkTrackerDB.hideTitleText = addon.defaults.hideTitleText
         HomeworkTrackerDB.barTexture = nil
         HomeworkTrackerDB.width = addon.defaults.width or 280
         HomeworkTrackerDB.height = addon.defaults.height or 400
         HomeworkTrackerDB.position = addon.defaults.position and { point = addon.defaults.position.point,
-            relativePoint = addon.defaults.position.relativePoint,
-            xOfs = addon.defaults.position.xOfs,
-            yOfs = addon.defaults.position.yOfs }
+                relativePoint = addon.defaults.position.relativePoint,
+                xOfs = addon.defaults.position.xOfs,
+                yOfs = addon.defaults.position.yOfs }
         HomeworkTrackerDB.moduleOrder = nil
         HomeworkTrackerDB.categoryOrder = nil
 
@@ -2547,7 +2584,7 @@ local function BuildTab_Rares(parent)
     cb3.check:SetChecked(HomeworkTrackerDB.rares.currentZone)
     y = y - SMALL_GAP - 14
 
-    local cbRep = CreateCheckbox(parent, "Hide Rares with Weekly Reputation Collected", function(val)
+    local cbRep = CreateCheckbox(parent, "Hide Rares with Reputation Collected", function(val)
         HomeworkTrackerDB.rares.hideRepComplete = val
         addon:UpdateDisplay()
     end)

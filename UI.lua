@@ -101,20 +101,24 @@ function addon:CreateUI()
     self.mainFrame = frame
     self.sections = {}
 
+    if self.UpdateLayout then
+        self:UpdateLayout()
+    end
+
     frame.scrollFrame = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
     frame.scrollFrame:SetPoint("TOPLEFT", 5, -(TITLE_BAR_HEIGHT + 1))
     frame.scrollFrame:SetPoint("BOTTOMRIGHT", -25, 5)
-    
+
     local scrollBar = frame.scrollFrame.ScrollBar
     if scrollBar then
         scrollBar:SetAlpha(0)
         scrollBar:EnableMouse(false)
     end
-    
+
     frame.scrollChild = CreateFrame("Frame", nil, frame.scrollFrame)
     frame.scrollChild:SetSize(fw - 30, 1)
     frame.scrollFrame:SetScrollChild(frame.scrollChild)
-    
+
     frame.scrollFrame:SetScript("OnMouseWheel", function(self, delta)
         local current = self:GetVerticalScroll()
         local step = 40
@@ -126,6 +130,10 @@ function addon:CreateUI()
     end)
 
     self:CreateTitleBar()
+    -- Initialize minimap button
+    if addon.InitMinimapButton then
+        addon:InitMinimapButton()
+    end
 end
 
 -- Get category color
@@ -152,7 +160,19 @@ end
 -- Build the title bar
 function addon:CreateTitleBar()
     local frame = self.mainFrame
-    if not frame then return end
+    if not frame then return end 
+
+    if frame.titleBar then
+        frame.titleBar:Hide()
+        frame.titleBar:ClearAllPoints()
+        frame.titleBar:SetParent(nil)
+        frame.titleBar:SetScript("OnDragStart", nil)
+        frame.titleBar:SetScript("OnDragStop", nil)
+        frame.titleBar:SetScript("OnClick", nil)
+        frame.titleBar = nil
+        frame.titleText = nil
+        frame.collapseLabel = nil
+    end
 
     local titleBar = CreateFrame("Button", nil, frame)
     titleBar:SetHeight(TITLE_BAR_HEIGHT)
@@ -186,7 +206,6 @@ function addon:CreateTitleBar()
     end)
     titleBar:SetScript("OnDragStop", function()
         frame:StopMovingOrSizing()
-        -- Always save as TOPLEFT so SetHeight always grows downward
         local left = frame:GetLeft()
         local top  = frame:GetTop()
         frame:ClearAllPoints()
@@ -213,7 +232,12 @@ function addon:RefreshTitleBar()
     local fontSize = self:GetHeaderFontSize() + 1
     self:SetFont(frame.titleText, fontKey, fontSize, HomeworkTrackerDB.headerFontOutline)
     frame.titleText:SetTextColor(r, g, b, 1)
-    frame.titleText:SetText("Homework Tracker")
+
+    if HomeworkTrackerDB.hideTitleText then
+        frame.titleText:SetText("")
+    else
+        frame.titleText:SetText("Homework Tracker")
+    end
     if frame.collapseLabel then
         self:SetFont(frame.collapseLabel, fontKey, fontSize, HomeworkTrackerDB.headerFontOutline)
         frame.collapseLabel:SetTextColor(r, g, b, 1)
@@ -227,30 +251,39 @@ function addon:ApplyCollapseState()
     if frame.collapseLabel then
         frame.collapseLabel:SetText(minimized and "+" or "-")
     end
+    -- Use saved position if available to avoid overwriting or moving unexpectedly
+    local savedPos = (HomeworkTrackerDB and HomeworkTrackerDB.position) or {}
+    local left = savedPos.xOfs or frame:GetLeft()
+    local top  = savedPos.yOfs or frame:GetTop()
     if minimized then
         if frame.scrollFrame then frame.scrollFrame:Hide() end
         frame:SetHeight(TITLE_BAR_HEIGHT)
+        frame:ClearAllPoints()
+        frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
     else
         if frame.scrollFrame then frame.scrollFrame:Show() end
         frame:SetHeight(self:GetFrameHeight())
+        frame:ClearAllPoints()
+        frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
     end
 end
 
 -- Update layout
 function addon:UpdateLayout()
     if not self.mainFrame then return end
-    
+
+    if self.CreateTitleBar then self:CreateTitleBar() end
+
     if HomeworkTrackerDB.scale then
         self.mainFrame:SetScale(HomeworkTrackerDB.scale)
     end
-    
-    self.mainFrame:SetMovable(true)
 
+    self.mainFrame:SetMovable(true)
     if self.mainFrame.titleBar then
         self.mainFrame.titleBar:RegisterForDrag("LeftButton")
     end
 
-    if HomeworkTrackerDB.position then
+    if HomeworkTrackerDB and HomeworkTrackerDB.position then
         local pos = HomeworkTrackerDB.position
         self.mainFrame:ClearAllPoints()
         -- Normalize legacy anchors to TOPLEFT so SetHeight always grows downward
@@ -281,12 +314,26 @@ function addon:UpdateLayout()
     self:ApplyCollapseState()
 end
 
--- Check instance state
-function addon:CheckInstanceState()
+-- Check visibility state (instance/raid/party/combat/delve)
+function addon:CheckVisibilityState()
     local inInstance = IsInInstance()
     local inRaid = IsInRaid()
     local inGroup = IsInGroup()
     local inParty = inGroup and not inRaid
+    local inCombat = InCombatLockdown() or UnitAffectingCombat("player")
+    local inDelve = self:IsInDelve()
+
+    if inDelve then
+        self._inDelves = true
+        if self.mainFrame then self.mainFrame:Hide() end
+        return
+    end
+
+    if self._inDelves then
+        self._inDelves = false
+        if self.mainFrame then self:UpdateLayout() end
+        self:UpdateDisplay()
+    end
 
     if inInstance then
         self._inInstance = true
@@ -296,6 +343,18 @@ function addon:CheckInstanceState()
 
     if self._inInstance then
         self._inInstance = false
+        if self.mainFrame then self:UpdateLayout() end
+        self:UpdateDisplay()
+    end
+
+    if HomeworkTrackerDB and HomeworkTrackerDB.hideInCombat and inCombat then
+        self._inCombat = true
+        if self.mainFrame then self.mainFrame:Hide() end
+        return
+    end
+
+    if self._inCombat then
+        self._inCombat = false
         if self.mainFrame then self:UpdateLayout() end
         self:UpdateDisplay()
     end
@@ -495,10 +554,11 @@ function addon:UpdateDisplay()
     end
     
     parent:SetHeight(math.abs(yOffset) + 10)
-
-    if #self.sections > 0 and not self._inInstance
+    
+    if #self.sections > 0 and not self._inInstance and not self._inDelves
        and not (self._inParty and HomeworkTrackerDB.hideInParty)
-       and not (self._inRaid and HomeworkTrackerDB.hideInRaid) then
+       and not (self._inRaid and HomeworkTrackerDB.hideInRaid)
+       and not (self._inCombat and HomeworkTrackerDB.hideInCombat) then
         self.mainFrame:Show()
         self:ApplyCollapseState()
     else
@@ -621,9 +681,12 @@ function addon:UpdateGreatVaultSection(parent, yOffset, expStates)
         local valueText = ""
         for i = 1, 3 do
             if i <= #vaultData.raid and vaultData.raid[i].progress >= vaultData.raid[i].threshold then
-                valueText = valueText .. "|TInterface\\RaidFrame\\ReadyCheck-Ready:14:14|t "
+                local lvl = vaultData.raid[i].level or 1
+                if lvl < 1 then lvl = 1 end
+                if lvl > 5 then lvl = 5 end
+                valueText = valueText .. string.format("|A:Professions-ChatIcon-Quality-Tier%d:18:18::1|a ", lvl)
             else
-                valueText = valueText .. "|TInterface\\RaidFrame\\ReadyCheck-NotReady:14:14|t "
+                valueText = valueText .. "|TInterface\\RaidFrame\\ReadyCheck-NotReady:18:18|t "
             end
         end
         bar.timeText:SetText(valueText)
@@ -642,9 +705,12 @@ function addon:UpdateGreatVaultSection(parent, yOffset, expStates)
         local valueText = ""
         for i = 1, 3 do
             if i <= #vaultData.mythicPlus and vaultData.mythicPlus[i].progress >= vaultData.mythicPlus[i].threshold then
-                valueText = valueText .. "|TInterface\\RaidFrame\\ReadyCheck-Ready:14:14|t "
+                local lvl = vaultData.mythicPlus[i].level or 1
+                if lvl < 1 then lvl = 1 end
+                if lvl > 5 then lvl = 5 end
+                valueText = valueText .. string.format("|A:Professions-ChatIcon-Quality-Tier%d:18:18::1|a ", lvl)
             else
-                valueText = valueText .. "|TInterface\\RaidFrame\\ReadyCheck-NotReady:14:14|t "
+                valueText = valueText .. "|TInterface\\RaidFrame\\ReadyCheck-NotReady:18:18|t "
             end
         end
         bar.timeText:SetText(valueText)
@@ -663,9 +729,12 @@ function addon:UpdateGreatVaultSection(parent, yOffset, expStates)
         local valueText = ""
         for i = 1, 3 do
             if i <= #vaultData.delves and vaultData.delves[i].progress >= vaultData.delves[i].threshold then
-                valueText = valueText .. "|TInterface\\RaidFrame\\ReadyCheck-Ready:14:14|t "
+                local lvl = vaultData.delves[i].level or 1
+                if lvl < 1 then lvl = 1 end
+                if lvl > 5 then lvl = 5 end
+                valueText = valueText .. string.format("|A:Professions-ChatIcon-Quality-Tier%d:18:18::1|a ", lvl)
             else
-                valueText = valueText .. "|TInterface\\RaidFrame\\ReadyCheck-NotReady:14:14|t "
+                valueText = valueText .. "|TInterface\\RaidFrame\\ReadyCheck-NotReady:18:18|t "
             end
         end
         bar.timeText:SetText(valueText)
@@ -783,7 +852,7 @@ function addon:UpdateCrestsSection(parent, yOffset, expStates)
 
         bar.timeText:SetText(""); bar.timeText:Hide()
         bar.crestElements = bar.crestElements or {}
-        -- Reversed: anchor rightmost first, chain left
+        -- Anchor right-to-left
         for i = 1, #visible do
             local data = visible[#visible - i + 1]
             local elem = bar.crestElements[i]
@@ -795,13 +864,17 @@ function addon:UpdateCrestsSection(parent, yOffset, expStates)
                 elem.qtyText = elem:CreateFontString(nil, "OVERLAY")
                 addon:SetFont(elem.qtyText)
                 elem.qtyText:SetJustifyH("RIGHT")
-                elem.qtyText:SetTextColor(1, 1, 1, 1)
+                local rr, rg, rb = GetColor("textRight", nil, 1, 1, 1)
+                elem.qtyText:SetTextColor(rr, rg, rb, 1)
                 elem.iconButton = CreateFrame("Button", nil, elem)
                 bar.crestElements[i] = elem
             end
 
             local qtyStr = tostring(data.quantity)
             elem.qtyText:SetText(qtyStr)
+            addon:SetFont(elem.qtyText)
+            local rr, rg, rb = GetColor("textRight", nil, 1, 1, 1)
+            elem.qtyText:SetTextColor(rr, rg, rb, 1)
             elem.qtyText:Show()
 
             local qtyTextWidth = math.max(8, math.ceil(elem.qtyText:GetStringWidth()))
