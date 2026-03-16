@@ -43,6 +43,12 @@ function addon:InitMinimapButton()
             self._minimapDataObject = obj
         end
 
+        if HomeworkTrackerDB.showMinimapButton == false then
+            HomeworkTrackerDB.minimap.hide = true
+        else
+            HomeworkTrackerDB.minimap.hide = nil
+        end
+
         -- Register with LibDBIcon (uses HomeworkTrackerDB.minimap for persistence)
         LDBIcon:Register("HomeworkTracker", self._minimapDataObject, HomeworkTrackerDB.minimap)
     else
@@ -103,6 +109,10 @@ function addon:UpdateMinimapButtonVisibility()
     end
 
     if LDBIcon and self._minimapDataObject then
+        HomeworkTrackerDB = HomeworkTrackerDB or {}
+        HomeworkTrackerDB.minimap = HomeworkTrackerDB.minimap or {}
+        HomeworkTrackerDB.minimap.hide = not show
+
         if show then
             LDBIcon:Show("HomeworkTracker")
         else
