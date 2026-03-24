@@ -11,6 +11,7 @@ local headerPool = {}
 -- Recycle unused containers
 local function ReleaseContainer(container)
     if not container then return end
+    GameTooltip:Hide()
     container:Hide()
     container:ClearAllPoints()
     container:SetParent(nil)
@@ -32,6 +33,20 @@ local function ReleaseContainer(container)
 
     if container.crestElements then
         for _, e in ipairs(container.crestElements) do
+            if e.icon then e.icon:SetTexture(nil); e.icon:Hide() end
+            if e.qtyText then e.qtyText:SetText(""); e.qtyText:Hide() end
+            e:Hide()
+        end
+    end
+    if container.preyElements then
+        for _, e in ipairs(container.preyElements) do
+            if e.icon then e.icon:SetTexture(nil); e.icon:Hide() end
+            if e.qtyText then e.qtyText:SetText(""); e.qtyText:Hide() end
+            e:Hide()
+        end
+    end
+    if container.abundanceElements then
+        for _, e in ipairs(container.abundanceElements) do
             if e.icon then e.icon:SetTexture(nil); e.icon:Hide() end
             if e.qtyText then e.qtyText:SetText(""); e.qtyText:Hide() end
             e:Hide()
@@ -382,6 +397,18 @@ function addon:CheckVisibilityState()
         if self.mainFrame then self:UpdateLayout() end
         self:UpdateDisplay()
     end
+
+    if HomeworkTrackerDB and HomeworkTrackerDB.hideOutsideMajorCities and not self:IsInMajorCity() then
+        self._outsideMajorCity = true
+        if self.mainFrame then self.mainFrame:Hide() end
+        return
+    end
+
+    if self._outsideMajorCity then
+        self._outsideMajorCity = false
+        if self.mainFrame then self:UpdateLayout() end
+        self:UpdateDisplay()
+    end
 end
 
 -- Create section header string
@@ -446,6 +473,14 @@ function addon:CreateContainer(parent, yOffset, hasBar, indent)
     container.timeText:SetTextColor(rr, rg, rb, 1)
     container.timeText:SetJustifyH("RIGHT")
     container.timeText:Show()
+
+    if container.timeText then
+        container.timeText:EnableMouse(false)
+        container.timeText:SetScript("OnMouseUp", nil)
+        container.timeText:SetScript("OnEnter", nil)
+        container.timeText:SetScript("OnLeave", nil)
+    end
+    GameTooltip:Hide()
     
     if not container.icon then
         container.icon = container:CreateTexture(nil, "OVERLAY")
@@ -558,7 +593,8 @@ function addon:UpdateDisplay()
     if #self.sections > 0 and not self._inInstance and not self._inDelves
        and not (self._inParty and HomeworkTrackerDB.hideInParty)
        and not (self._inRaid and HomeworkTrackerDB.hideInRaid)
-       and not (self._inCombat and HomeworkTrackerDB.hideInCombat) then
+       and not (self._inCombat and HomeworkTrackerDB.hideInCombat)
+       and not (self._outsideMajorCity and HomeworkTrackerDB.hideOutsideMajorCities) then
         self.mainFrame:Show()
         self:ApplyCollapseState()
     else
@@ -674,6 +710,15 @@ function addon:UpdateGreatVaultSection(parent, yOffset, expStates)
     
     local r, g, b = GetColor("vault")
 
+    local function mapRewardToIcon(itemLevel)
+        if not itemLevel then return 1 end
+        if itemLevel >= 272 then return 5 end
+        if itemLevel >= 259 then return 4 end
+        if itemLevel >= 246 then return 3 end
+        if itemLevel >= 233 then return 2 end
+        return 1
+    end
+
     if cfg.showRaid and #vaultData.raid > 0 then
         local bar = self:CreateContainer(parent, yOffset, true)
         bar.nameText:SetText("Raid")
@@ -681,7 +726,17 @@ function addon:UpdateGreatVaultSection(parent, yOffset, expStates)
         local valueText = ""
         for i = 1, 3 do
             if i <= #vaultData.raid and vaultData.raid[i].progress >= vaultData.raid[i].threshold then
-                local lvl = vaultData.raid[i].level or 1
+                local entry = vaultData.raid[i]
+                local lvl
+                if entry.itemLevel then
+                    lvl = mapRewardToIcon(entry.itemLevel)
+                elseif entry.rewardLevel then
+                    lvl = mapRewardToIcon(entry.rewardLevel)
+                elseif entry.level then
+                    lvl = entry.level
+                else
+                    lvl = 1
+                end
                 if lvl < 1 then lvl = 1 end
                 if lvl > 5 then lvl = 5 end
                 valueText = valueText .. string.format("|A:Professions-ChatIcon-Quality-Tier%d:18:18::1|a ", lvl)
@@ -705,7 +760,17 @@ function addon:UpdateGreatVaultSection(parent, yOffset, expStates)
         local valueText = ""
         for i = 1, 3 do
             if i <= #vaultData.mythicPlus and vaultData.mythicPlus[i].progress >= vaultData.mythicPlus[i].threshold then
-                local lvl = vaultData.mythicPlus[i].level or 1
+                local entry = vaultData.mythicPlus[i]
+                local lvl
+                if entry.itemLevel then
+                    lvl = mapRewardToIcon(entry.itemLevel)
+                elseif entry.rewardLevel then
+                    lvl = mapRewardToIcon(entry.rewardLevel)
+                elseif entry.level then
+                    lvl = entry.level
+                else
+                    lvl = 1
+                end
                 if lvl < 1 then lvl = 1 end
                 if lvl > 5 then lvl = 5 end
                 valueText = valueText .. string.format("|A:Professions-ChatIcon-Quality-Tier%d:18:18::1|a ", lvl)
@@ -729,7 +794,17 @@ function addon:UpdateGreatVaultSection(parent, yOffset, expStates)
         local valueText = ""
         for i = 1, 3 do
             if i <= #vaultData.delves and vaultData.delves[i].progress >= vaultData.delves[i].threshold then
-                local lvl = vaultData.delves[i].level or 1
+                local entry = vaultData.delves[i]
+                local lvl
+                if entry.itemLevel then
+                    lvl = mapRewardToIcon(entry.itemLevel)
+                elseif entry.rewardLevel then
+                    lvl = mapRewardToIcon(entry.rewardLevel)
+                elseif entry.level then
+                    lvl = entry.level
+                else
+                    lvl = 1
+                end
                 if lvl < 1 then lvl = 1 end
                 if lvl > 5 then lvl = 5 end
                 valueText = valueText .. string.format("|A:Professions-ChatIcon-Quality-Tier%d:18:18::1|a ", lvl)
@@ -771,20 +846,134 @@ function addon:UpdateWeeklySection(parent, yOffset, expStates)
             local bar = self:CreateContainer(parent, yOffset, true)
             bar.nameText:SetText(quest.name)
             bar.icon:Hide()
-            
-            if quest.info ~= "" then
-                bar.timeText:SetText(quest.info)
-            else
+
+            if quest.handler == "prey" then
+                local n, h, m = 0, 0, 0
+                if type(quest.preyCounts) == "table" then
+                    n = tonumber(quest.preyCounts.normal) or 0
+                    h = tonumber(quest.preyCounts.hard) or 0
+                    m = tonumber(quest.preyCounts.nightmare) or 0
+                end
+
+                local preyAtlases = { "UI-HUD-Minimap-GuildBanner-Normal-Large", "UI-HUD-Minimap-GuildBanner-Heroic-Large", "UI-HUD-Minimap-GuildBanner-Mythic-Large" }
+                local preyLabels = { "Normal", "Hard", "Nightmare" }
+                local preyCounts = { n, h, m }
+
                 bar.timeText:SetText("")
+                bar.timeText:Hide()
+                bar.preyElements = bar.preyElements or {}
+                for i = 1, 3 do
+                    local idx = (#preyCounts - i + 1)
+                    local count = preyCounts[idx]
+                    local atlas = preyAtlases[idx]
+                    local label = preyLabels[idx]
+                    local elem = bar.preyElements[i]
+
+                    if not elem then
+                        elem = CreateFrame("Frame", nil, bar)
+                        elem.icon = elem:CreateTexture(nil, "ARTWORK")
+                        elem.icon:SetSize(12, 12)
+                        elem.qtyText = elem:CreateFontString(nil, "OVERLAY")
+                        addon:SetFont(elem.qtyText)
+                        elem.qtyText:SetJustifyH("RIGHT")
+                        elem.iconButton = CreateFrame("Button", nil, elem)
+                        bar.preyElements[i] = elem
+                    end
+
+                    local rr, rg, rb = GetColor("textRight", nil, 1, 1, 1)
+                    elem.qtyText:SetTextColor(rr, rg, rb, 1)
+
+                    elem.qtyText:SetText(tostring(count) .. "/4")
+                    addon:SetFont(elem.qtyText)
+                    elem.qtyText:Show()
+
+                    local fontSize = addon:GetFontSize() or 12
+                    local iconSize = math.max(8, math.floor(fontSize) + 2)
+                    local qtyTextWidth = math.max(8, math.ceil(elem.qtyText:GetStringWidth()))
+                    local preyIconWidth = iconSize
+                    local qtyIconGap = 1
+                    local elementHorizontalPadding = 2
+                    local elementWidth = math.max(34, qtyTextWidth + preyIconWidth + qtyIconGap + elementHorizontalPadding)
+                    elem:SetSize(elementWidth, iconSize)
+                    elem.qtyText:SetWidth(qtyTextWidth)
+
+                    if elem.icon.SetAtlas then
+                        elem.icon:SetAtlas(atlas, true)
+                    end
+                    elem.icon:SetSize(iconSize, iconSize)
+
+                    elem.icon:Show()
+                    elem:ClearAllPoints()
+
+                    if i == 1 then
+                        elem:SetPoint("BOTTOMRIGHT", bar, "TOPRIGHT", -15, -8)
+                    else
+                        elem:SetPoint("BOTTOMRIGHT", bar.preyElements[i-1], "BOTTOMLEFT", -1, 0)
+                    end
+
+                    elem.icon:SetPoint("RIGHT", elem, "RIGHT", -1, 0)
+                    elem.qtyText:SetPoint("RIGHT", elem.icon, "LEFT", -1, 0)
+                    elem.icon:SetSize(iconSize, iconSize)
+
+                    if elem.iconButton then
+                        elem.iconButton:ClearAllPoints()
+                        elem.iconButton:SetAllPoints(elem.icon)
+                        local difficultyKeys = { "normal", "hard", "nightmare" }
+                        local difficultyKey = difficultyKeys[idx]
+                        local difficultyLabel = label or (difficultyKey and (difficultyKey:sub(1,1):upper() .. difficultyKey:sub(2))) or ""
+                        elem.iconButton:SetScript("OnEnter", function(self)
+                            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                            GameTooltip:ClearLines()
+                            GameTooltip:SetText(difficultyLabel, 1, 1, 1)
+
+                            local foundAny = false
+                            local idsTable = quest.preyQuestIDs and quest.preyQuestIDs[difficultyKey]
+                            if idsTable and type(idsTable) == "table" then
+                                for _, qid in ipairs(idsTable) do
+                                    if addon:IsQuestComplete(qid) then
+                                        foundAny = true
+                                        local title = (C_TaskQuest and C_TaskQuest.GetQuestInfoByQuestID and C_TaskQuest.GetQuestInfoByQuestID(qid))
+                                                  or (C_QuestLog.GetTitleForQuestID and C_QuestLog.GetTitleForQuestID(qid))
+                                                  or tostring(qid)
+                                        local icon = "|TInterface\\RaidFrame\\ReadyCheck-Ready:12:12|t "
+                                        GameTooltip:AddLine(icon .. (title or tostring(qid)), 0.8, 0.8, 0.8, true)
+                                    end
+                                end
+                            end
+
+                            if not foundAny then
+                                GameTooltip:AddLine("(none)", 0.8, 0.8, 0.8, true)
+                            end
+                            GameTooltip:Show()
+                        end)
+                        elem.iconButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+                    end
+
+                    elem:Show()
+                end
+
+                local total = #preyCounts
+                for j = total + 1, #bar.preyElements do
+                    if bar.preyElements[j] then bar.preyElements[j]:Hide() end
+                end
+            else
+                if quest.info ~= "" then
+                    bar.timeText:SetText(quest.info)
+                else
+                    bar.timeText:SetText("")
+                end
             end
-            
+
             local catID = quest.category or "general"
             local catInfo = addon.categoryInfo and addon.categoryInfo[catID]
-            
             if not catInfo and addon.categoryInfo then
-                 catInfo = addon.categoryInfo["general"]
+                catInfo = addon.categoryInfo["general"]
             end
-            
+
+            if quest.handler and addon.weeklyHandlers and addon.weeklyHandlers[quest.handler] then
+                addon.weeklyHandlers[quest.handler](bar, quest)
+            end
+
             local defaultR, defaultG, defaultB = 0.255, 0.439, 0.929
             if catInfo and catInfo.color then
                 defaultR, defaultG, defaultB = unpack(catInfo.color)
@@ -877,13 +1066,17 @@ function addon:UpdateCrestsSection(parent, yOffset, expStates)
             elem.qtyText:SetTextColor(rr, rg, rb, 1)
             elem.qtyText:Show()
 
+            local fontSize = addon:GetFontSize() or 12
+            local iconSize = math.max(10, math.floor(fontSize) + 2)
             local qtyTextWidth = math.max(8, math.ceil(elem.qtyText:GetStringWidth()))
-            local crestIconWidth = 12
+            local crestIconWidth = iconSize
             local qtyIconGap = 1
             local elementHorizontalPadding = 2
             local elementWidth = qtyTextWidth + crestIconWidth + qtyIconGap + elementHorizontalPadding
-            elem:SetSize(elementWidth, 12)
+
+            elem:SetSize(elementWidth, iconSize)
             elem.qtyText:SetWidth(qtyTextWidth)
+            elem.icon:SetSize(iconSize, iconSize)
 
             if type(data.icon) == "number" then
                 elem.icon:SetTexture(data.icon)
@@ -966,7 +1159,7 @@ function addon:UpdateCurrencySection(parent, yOffset, expStates)
                     
                     bar.icon:Hide()
                     addon:SetBarColor(bar, r, g, b, 0.8)
-                    local iconStr = " |T" .. iconID .. ":12:12:-2:0|t"
+                    local iconStr = " |T" .. iconID .. ":14:14:-2:0|t"
                     bar.iconButton:Show()
                     bar.iconButton:SetSize(16, 16)
                     bar.iconButton:ClearAllPoints()
@@ -1314,14 +1507,15 @@ function addon:UpdateRaresSection(parent, yOffset, expStates)
                     local bar = self:CreateContainer(parent, yOffset, true, 20)
 
                     bar.nameText:SetText(rare.name)
-                    bar.timeText:SetText("|TInterface/Icons/Inv_misc_bone_humanskull_01:12:12|t")
+                    bar.timeText:SetText("|A:DungeonSkull:14:14|a")
                     bar.icon:Hide()
 
                     addon:SetBarColor(bar, zcolor[1], zcolor[2], zcolor[3], 0.8)
 
                     local mapID = addon.zoneIDs and addon.zoneIDs[rare.zone]
-                    if TomTom and mapID and rare.x and rare.y then
-                        bar.iconButton:Show() 
+
+                    if mapID then
+                        bar.iconButton:Show()
                         bar.iconButton:SetSize(16, 16)
                         bar.iconButton:ClearAllPoints()
                         bar.iconButton:SetPoint("RIGHT", bar.timeText, "RIGHT", 0, 0)
@@ -1331,31 +1525,39 @@ function addon:UpdateRaresSection(parent, yOffset, expStates)
                             GameTooltip:SetText(rare.name, 1, 1, 1)
                             GameTooltip:AddLine(rare.zone, 1, 1, 1)
                             GameTooltip:AddLine(" ")
-                            GameTooltip:AddLine(string.format("Coords: %.1f, %.1f", rare.x, rare.y), 1, 1, 1)
-                            GameTooltip:AddLine("|cff00ff00Ctrl + Click|r to set waypoint", 0.7, 0.7, 0.7)
-                            GameTooltip:AddLine("Arrow only visible in correct zone", 1, 0.5, 0)
+                            if rare.x and rare.y then
+                                GameTooltip:AddLine(string.format("Coords: %.1f, %.1f", rare.x, rare.y), 1, 1, 1)
+                            end
                             if rare.phaseDivingRequired then
                                 GameTooltip:AddLine("|cffff8800Phase Diving is required|r", 1, 0.6, 0)
                             end
+                            GameTooltip:AddLine("|cff00ff00Ctrl + Click|r to set waypoint", 0.7, 0.7, 0.7)
+                            if TomTom and rare.x and rare.y then
+                                GameTooltip:AddLine("Arrow only visible in correct zone", 1, 0.5, 0)
+                            end
                             GameTooltip:Show()
                         end)
-
                         bar.iconButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
                         bar.iconButton:SetScript("OnMouseUp", function(self)
                             if IsControlKeyDown() then
-                                local uid = TomTom:AddWaypoint(mapID, rare.x / 100, rare.y / 100, {
-                                    title = rare.name,
-                                    persistent = false,
-                                    minimap = true,
-                                    world = true
-                                })
-                                if TomTom.SetCrazyArrow and uid then
-                                    TomTom:SetCrazyArrow(uid, 60, rare.name)
+                                if TomTom and rare.x and rare.y then
+                                    local uid = TomTom:AddWaypoint(mapID, rare.x / 100, rare.y / 100, {
+                                        title = rare.name,
+                                        persistent = false,
+                                        minimap = true,
+                                        world = true
+                                    })
+                                    if TomTom.SetCrazyArrow and uid then
+                                        TomTom:SetCrazyArrow(uid, 60, rare.name)
+                                    end
+                                elseif addon and addon.SetBlizzardWaypoint then
+                                    addon:SetBlizzardWaypoint(mapID, rare.x / 100, rare.y / 100)
                                 end
                             end
                         end)
                     else
-                        bar.iconButton:Hide()
+                        bar.iconButton:SetScript("OnMouseUp", nil)
                     end
                     bar:EnableMouse(false)
 
@@ -1411,38 +1613,51 @@ function addon:UpdateDelvesSection(parent, yOffset, expStates)
          
         local bar = self:CreateContainer(parent, yOffset, true) 
         bar.nameText:SetText(delve.name) 
-        bar.timeText:SetText(delve.zone .. " |A:delves-bountiful:12:12|a") 
+        bar.timeText:SetText(delve.zone .. " |A:delves-bountiful:14:14|a") 
         bar.icon:Hide() 
          
         addon:SetBarColor(bar, r, g, b, 0.8) 
 
         local mapID = addon.zoneIDs and addon.zoneIDs[delve.zone]
-        if TomTom and mapID and delve.x and delve.y then
+        if mapID then
             bar.iconButton:Show()
             bar.iconButton:SetSize(16, 16)
             bar.iconButton:ClearAllPoints()
             bar.iconButton:SetPoint("RIGHT", bar.timeText, "RIGHT", 0, 0)
-            
+
             bar.iconButton:SetScript("OnEnter", function(self)
                 GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                 GameTooltip:SetText(delve.name, 1, 1, 1)
                 GameTooltip:AddLine(delve.zone, 1, 1, 1)
                 GameTooltip:AddLine(" ")
+                GameTooltip:AddLine("|cff00ff00Click|r to open map", 0.7, 0.7, 0.7, true)
                 GameTooltip:AddLine("|cff00ff00Ctrl + Click|r to set waypoint", 0.7, 0.7, 0.7)
-                GameTooltip:AddLine("Arrow only visible in correct zone", 1, 0.5, 0)
+                if TomTom and delve.x and delve.y then
+                    GameTooltip:AddLine("Arrow only visible in correct zone", 1, 0.5, 0)
+                end
                 GameTooltip:Show()
             end)
             bar.iconButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
             bar.iconButton:SetScript("OnMouseUp", function(self)
                 if IsControlKeyDown() then
-                    local uid = TomTom:AddWaypoint(mapID, delve.x / 100, delve.y / 100, {
-                        title = delve.name,
-                        persistent = false,
-                        minimap = true,
-                        world = true
-                    })
-                    if TomTom.SetCrazyArrow and uid then
-                        TomTom:SetCrazyArrow(uid, 60, delve.name)
+                    if TomTom and delve.x and delve.y then
+                        local uid = TomTom:AddWaypoint(mapID, delve.x / 100, delve.y / 100, {
+                            title = delve.name,
+                            persistent = false,
+                            minimap = true,
+                            world = true
+                        })
+                        if TomTom.SetCrazyArrow and uid then
+                            TomTom:SetCrazyArrow(uid, 60, delve.name)
+                        end
+                    elseif addon and addon.SetBlizzardWaypoint then
+                        addon:SetBlizzardWaypoint(mapID, delve.x / 100, delve.y / 100)
+                    end
+                else
+                    if mapID and WorldMapFrame and WorldMapFrame.SetMapID then
+                        ShowUIPanel(WorldMapFrame)
+                        WorldMapFrame:SetMapID(mapID)
                     end
                 end
             end)

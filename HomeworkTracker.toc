@@ -3,27 +3,30 @@
 ## IconTexture: 647701
 ## Notes: Tracks various game activities and progress
 ## Author: Dreambjorn
-## Version: 1.4.1
+## Version: 1.5.0
 ## Category: Homework
 ## SavedVariablesPerCharacter: HomeworkTrackerDB
 ## SavedVariables: HomeworkTrackerAccountDB
 
-## --- Libraries --------------------------------------------------------
+## --- Libraries ----------------------------------------------------------
 libs\LibStub\LibStub.lua
 libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
 libs\LibSharedMedia-3.0\LibSharedMedia-3.0.lua
 libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
 libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
 
-## --- Initialization --------------------------------------------------
+## --- Initialization -----------------------------------------------------
 DBInitializer.lua
 
-## --- Databases --------------------------------------------------------
+## --- Databases ----------------------------------------------------------
 Database\General.lua
 Database\TheWarWithin.lua
 Database\Midnight.lua
 
-## --- Core --------------------------------------------------
+## --- Expansion Helpers --------------------------------------------------
+ExpansionHelpers\MidnightHelpers.lua
+
+## --- Core ---------------------------------------------------------------
 Util.lua
 MinimapButton.lua
 Core.lua

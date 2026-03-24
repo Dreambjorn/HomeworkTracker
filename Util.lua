@@ -13,10 +13,56 @@ local LSM = LibStub and LibStub("LibSharedMedia-3.0", true)
 local _dataCache = {}
 local CACHE_NIL = {} -- Marks a cache entry whose real value is nil (distinguishes from uncached)
 local _timingResult = {} -- Reused table written by GetEventTiming; avoids creating a new table on every call
+local _greatVaultRequeryFrame = nil -- Lightweight requery frame for missing Great Vault data
 
 -- Empty the cache so data is looked up again next time
 function addon:InvalidateDataCache()
     wipe(_dataCache)
+end
+
+
+function addon:RequestGreatVaultRequery()
+    if _greatVaultRequeryFrame and _greatVaultRequeryFrame:IsShown() then
+        _greatVaultRequeryFrame.t = 0
+        return
+    end
+
+    if not _greatVaultRequeryFrame then
+        _greatVaultRequeryFrame = CreateFrame("Frame")
+    end
+    _greatVaultRequeryFrame.t = 0
+    _greatVaultRequeryFrame:Show()
+    _greatVaultRequeryFrame:SetScript("OnUpdate", function(self, elapsed)
+        self.t = (self.t or 0) + elapsed
+        if self.t > 0.5 then
+            self:Hide()
+            self:SetScript("OnUpdate", nil)
+            if addon.InvalidateDataCache then addon:InvalidateDataCache() end
+            if addon.CheckVisibilityState then addon:CheckVisibilityState() end
+            if addon.UpdateDisplay then addon:UpdateDisplay() end
+            if addon.RefreshTitleBar then addon:RefreshTitleBar() end
+        end
+    end)
+end
+
+-- Check visibility flip and trigger a Great Vault requery when the tracker becomes visible.
+function addon:CheckVisibilityAndTriggerGreatVault()
+    local wasVisible = self._wasVisible or false
+    local nowVisible = self.mainFrame and self.mainFrame:IsShown() or false
+
+    if nowVisible and not wasVisible then
+        if HomeworkTrackerDB and HomeworkTrackerDB.greatVault and HomeworkTrackerDB.greatVault.enable then
+            local now = GetTime()
+            if not self._lastGreatVaultRequery or (now - self._lastGreatVaultRequery) >= 1 then
+                self._lastGreatVaultRequery = now
+                if self.RequestGreatVaultRequery then
+                    self:RequestGreatVaultRequery()
+                end
+            end
+        end
+    end
+
+    self._wasVisible = nowVisible
 end
 
 -- Default font size
@@ -223,7 +269,7 @@ function addon:GetResetTimestampForWeekday(targetWeekday)
     return candidate
 end
 
--- Within weekend window?
+-- Within weekend window
 function addon:IsWithinWeekendWindow()
     local now = GetServerTime()
     local satReset = self:GetResetTimestampForWeekday(7)
@@ -238,6 +284,35 @@ function addon:IsWithinWeekendWindow()
     return now >= satReset and now < monReset
 end
 
+-- Return true if player is in a major city
+function addon:IsInMajorCity()
+    if not addon.majorCities or not next(addon.majorCities) then return false end
+    if not C_Map or not C_Map.GetBestMapForUnit then return false end
+    local uiMapID = C_Map.GetBestMapForUnit("player")
+    if not uiMapID then return false end
+    return addon.majorCities[uiMapID] == true
+end
+
+-- Blizzard waypoint support helpers
+function addon:CanSetBlizzardWaypoint(mapID, x, y)
+    return C_Map and C_Map.CanSetUserWaypointOnMap and C_Map.CanSetUserWaypointOnMap(mapID) and x and y
+end
+
+function addon:SetBlizzardWaypoint(mapID, x, y)
+    if not self:CanSetBlizzardWaypoint(mapID, x, y) then return false end
+    if not UiMapPoint or not UiMapPoint.CreateFromCoordinates then return false end
+    local uiMapPoint = UiMapPoint.CreateFromCoordinates(mapID, x, y)
+    if not uiMapPoint then return false end
+    if C_Map and C_Map.SetUserWaypoint then
+        C_Map.SetUserWaypoint(uiMapPoint)
+        if C_SuperTrack and C_SuperTrack.SetSuperTrackedUserWaypoint then
+            C_SuperTrack.SetSuperTrackedUserWaypoint(true)
+        end
+        return true
+    end
+    return false
+end
+
 -- Great Vault progress
 function addon:GetGreatVaultInfo()
     if _dataCache.greatVault then return _dataCache.greatVault end
@@ -247,23 +322,54 @@ function addon:GetGreatVaultInfo()
         mythicPlus = {},
         delves = {},
     }
+    local requeryNeeded = false
     
-    local allActivities = C_WeeklyRewards.GetActivities()
-    
-    if allActivities then
-        for _, activity in ipairs(allActivities) do
-            -- 1=M+, 3=Raid, 6=Delves
-            if activity.type == 1 then
-                table.insert(data.mythicPlus, { level = activity.level, progress = activity.progress, threshold = activity.threshold })
-            elseif activity.type == 3 then
-                table.insert(data.raid, { level = activity.level, progress = activity.progress, threshold = activity.threshold })
-            elseif activity.type == 6 then
-                table.insert(data.delves, { level = activity.level, progress = activity.progress, threshold = activity.threshold })
+    -- Query weekly rewards for each chest type
+    local types = {
+        Enum.WeeklyRewardChestThresholdType.Raid,
+        Enum.WeeklyRewardChestThresholdType.Activities,
+        Enum.WeeklyRewardChestThresholdType.World,
+    }
+
+    for _, t in ipairs(types) do
+        local ok, activities = pcall(C_WeeklyRewards.GetActivities, t)
+        if ok and activities then
+            for _, activity in ipairs(activities) do
+                local entry = { level = activity.level, progress = activity.progress, threshold = activity.threshold, id = activity.id }
+                if activity.difficultyId then entry.difficultyId = activity.difficultyId end
+
+                -- Try to get Blizzard's example reward item level
+                if entry.id and C_WeeklyRewards and C_WeeklyRewards.GetExampleRewardItemHyperlinks then
+                    local ok2, itemLink, upgradeLink = pcall(C_WeeklyRewards.GetExampleRewardItemHyperlinks, entry.id)
+                    if ok2 and itemLink and itemLink ~= "" and itemLink ~= "[]" and C_Item and C_Item.GetDetailedItemLevelInfo then
+                        local ok3, ilvl = pcall(C_Item.GetDetailedItemLevelInfo, itemLink)
+                        if ok3 and ilvl and ilvl > 0 then entry.itemLevel = ilvl end
+                    end
+                    if ok2 and upgradeLink and upgradeLink ~= "" and upgradeLink ~= "[]" and C_Item and C_Item.GetDetailedItemLevelInfo then
+                        local ok4, uilvl = pcall(C_Item.GetDetailedItemLevelInfo, upgradeLink)
+                        if ok4 and uilvl and uilvl > 0 then entry.upgradeItemLevel = uilvl end
+                    end
+                end
+
+                if activity.type == Enum.WeeklyRewardChestThresholdType.Activities then
+                    table.insert(data.mythicPlus, entry)
+                elseif activity.type == Enum.WeeklyRewardChestThresholdType.Raid then
+                    table.insert(data.raid, entry)
+                elseif activity.type == Enum.WeeklyRewardChestThresholdType.World then
+                    table.insert(data.delves, entry)
+                end
+
+                if entry.progress >= (entry.threshold or 0) and not entry.itemLevel then
+                    requeryNeeded = true
+                end
             end
         end
     end
     
     _dataCache.greatVault = data
+    if requeryNeeded then
+        self:RequestGreatVaultRequery()
+    end
     return data
 end
 
@@ -490,7 +596,47 @@ function addon:GetWeeklyQuestInfo()
     for _, quest in ipairs(self.weeklyDB) do
         if quest.isWeekend and not self:IsWithinWeekendWindow() then
         else
-            local questIDs = type(quest.questID) == "table" and quest.questID or {quest.questID}
+            local questIDs = {}
+            local preyCounts = nil
+            local preyQuestIDs = nil
+            if type(quest.questID) == "table" then
+                local function append(list)
+                    if type(list) == "table" then
+                        for _, qid in ipairs(list) do table.insert(questIDs, qid) end
+                    end
+                end
+
+                if quest.questID.normal or quest.questID.hard or quest.questID.nightmare then
+                    append(quest.questID.normal)
+                    append(quest.questID.hard)
+                    append(quest.questID.nightmare)
+
+                    local function count(list)
+                        if type(list) ~= "table" then return 0 end
+                        local c = 0
+                        for _, qid in ipairs(list) do
+                            if self:IsQuestComplete(qid) then c = c + 1 end
+                            if c >= 4 then break end
+                        end
+                        return c
+                    end
+
+                    preyCounts = {
+                        normal = count(quest.questID.normal),
+                        hard = count(quest.questID.hard),
+                        nightmare = count(quest.questID.nightmare),
+                    }
+                    preyQuestIDs = {
+                        normal = (type(quest.questID.normal) == "table") and quest.questID.normal or nil,
+                        hard = (type(quest.questID.hard) == "table") and quest.questID.hard or nil,
+                        nightmare = (type(quest.questID.nightmare) == "table") and quest.questID.nightmare or nil,
+                    }
+                else
+                    append(quest.questID)
+                end
+            else
+                table.insert(questIDs, quest.questID)
+            end
             local isComplete = false
             local completed = 0
             local info = ""
@@ -547,6 +693,15 @@ function addon:GetWeeklyQuestInfo()
 
                 if completed > totalRequired then completed = totalRequired end
                 isComplete = (completed >= totalRequired)
+
+                if preyCounts then
+                    local needed = (type(quest.max) == "number") and quest.max or 4
+                    local n = tonumber(preyCounts.normal) or 0
+                    local h = tonumber(preyCounts.hard) or 0
+                    local m = tonumber(preyCounts.nightmare) or 0
+                    isComplete = (n >= needed) and (h >= needed) and (m >= needed)
+                end
+
                 info = completed .. "/" .. totalRequired
             end
             
@@ -558,6 +713,9 @@ function addon:GetWeeklyQuestInfo()
                 progress = completed,
                 required = quest.questType == "multiple" and #questIDs or 1,
                 category = quest.category,
+                handler = quest.handler,
+                preyCounts = preyCounts,
+                preyQuestIDs = preyQuestIDs,
             })
         end
     end
@@ -630,7 +788,7 @@ function addon:GetRareInfo(currentZone)
     return rares
 end
 
--- Delve check using party walk‑in flag
+-- Delve instance check
 function addon:IsInDelve()
     return C_PartyInfo.IsPartyWalkIn and C_PartyInfo.IsPartyWalkIn()
 end

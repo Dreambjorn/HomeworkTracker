@@ -32,6 +32,7 @@ addon:RegisterDatabaseInit("midnight", function()
     addon.expansionMapIDs = addon.expansionMapIDs or {}
     addon.expansionMapIDs.midnight = {
         [2537] = true, -- Quel'Thalas
+        [2393] = true, -- Silvermoon City
         [2395] = true, -- Eversong Woods
         [2424] = true, -- Isle of Quel'Danas
         [2437] = true, -- Zul'Aman
@@ -44,6 +45,7 @@ addon:RegisterDatabaseInit("midnight", function()
     addon.zoneIDs = addon.zoneIDs or {}
     local midnightIDs = {
         ["Quel'Thalas"]         = 2537,
+        ["Silvermoon City"]     = 2393,
         ["Eversong Woods"]      = 2395,
         ["Isle of Quel'Danas"]  = 2424,
         ["Zul'Aman"]            = 2437,
@@ -74,11 +76,12 @@ addon:RegisterDatabaseInit("midnight", function()
     addon.zonePriority = addon.zonePriority or {}
     local midnightZones = {
         ["Quel'Thalas"]         = 1,
-        ["Eversong Woods"]      = 2,
-        ["Isle of Quel'Danas"]  = 3,
-        ["Zul'Aman"]            = 4,
-        ["Harandar"]            = 5,
-        ["Voidstorm"]           = 6,
+        ["Silvermoon City"]     = 2,
+        ["Eversong Woods"]      = 3,
+        ["Isle of Quel'Danas"]  = 4,
+        ["Zul'Aman"]            = 5,
+        ["Harandar"]            = 6,
+        ["Voidstorm"]           = 7,
     }
     for k, v in pairs(midnightZones) do addon.zonePriority[k] = v end
 
@@ -155,31 +158,41 @@ addon:RegisterDatabaseInit("midnight", function()
 
     -- Weekly quests
     local midnightWeekly = {
-        { name = "Prey Hunts", questID = {
-                                        91095,91096,91097,91098,91099,91100,91101,91102,91103,91104,
-                                        91105,91106,91107,91108,91109,91110,91111,91112,91113,91114,
-                                        91115,91116,91117,91118,91119,91120,91121,91122,91123,91124,
-                                        91210,91211,91212,91213,91214,91215,91216,91217,91218,91219,
-                                        91220,91221,91222,91223,91224,91225,91226,91227,91228,91229,
-                                        91230,91231,91232,91233,91234,91235,91236,91237,91238,91239,
-                                        91240,91241,91242,91243,91244,91245,91246,91247,91248,91249,
-                                        91250,91251,91252,91253,91254,91255,91256,91257,91258,91259,
-                                        91260,91261,91262,91263,91264,91265,91266,91267,91268,91269
-                                    },
-          questType = "multiple", isWeekend = false, category = "general", max = 4 },
+        { name = "Prey Hunts",
+            questType = "multiple", isWeekend = false, category = "general", max = 4, handler = "prey",
+            questID = {
+                normal = { 91124,91123,91122,91121,91120,91119,91118,91117,91116,91115,91114,91113,91112,91111,91110,91109,91108,91107,91106,91105,91104,91103,91102,91101,91100,91099,91098,91097,91096,91095 },
+                hard =   { 91255,91254,91253,91252,91251,91250,91249,91248,91247,91246,91245,91244,91243,91242,91240,91238,91236,91234,91232,91230,91228,91226,91224,91222,91220,91218,91216,91214,91212,91210 },
+                nightmare = { 91269,91268,91267,91266,91265,91264,91263,91262,91261,91260,91259,91258,91257,91256,91241,91239,91237,91235,91233,91231,91229,91227,91225,91223,91221,91219,91217,91215,91213,91211 },
+            },
+        },
         { name = "World Boss", questID = {92636, 92560, 92034, 92123}, questType = "single", isWeekend = false, category = "general", 
           bossNames = {[92636] = "Predaxas", [92560] = "Lu'ashal", [92034] = "Thorm'belan", [92123] = "Cragpine"} },
         { name = "Saltheril's Soiree", questID = {90575,90573,90574,90576}, questType = "single", isWeekend = false, category = "eversong" },
-        { name = "Abundance", questID = {89507}, questType = "simple", isWeekend = false, category = "zulaman" },
+        { name = "Abundance", questID = {89507}, questType = "simple", isWeekend = false, category = "zulaman", handler = "abundance" },
         { name = "Lost Legends", questID = {89268}, questType = "simple", isWeekend = false, category = "harandar" },
         { name = "Stormarion Assault", questID = {90962}, questType = "simple", isWeekend = false, category = "voidstorm" },
         { name = "Stand Your Ground", questID = {94581}, questType = "simple", isWeekend = false, category = "voidstorm" },
+        { name = "Preparing for Battle", questID = {89354}, questType = "simple", isWeekend = false, category = "voidstorm" },
+        { name = "A Gnawing Void of Curiosity", questID = {93784}, questType = "simple", isWeekend = false, category = "delves" },
+        { name = "Trovehunter's Bounty", questID = {86371}, questType = "simple", isWeekend = false, category = "delves" },
     }
     addon.weeklyDB = addon.weeklyDB or {}
     for _, v in ipairs(midnightWeekly) do
         v.expansion = "midnight"
         table.insert(addon.weeklyDB, v)
     end
+
+    -- Abundance POI mapping
+    addon.abundantHarvest = {
+        poiMap = {
+            [8672] = 2395, -- Eversong Enchanting Crypt -> Eversong Woods
+            [8671] = 2437, -- Zul'Aman Skinning Den -> Zul'Aman
+            [8676] = 2413, -- Harandar Herbalism Grotto -> Harandar
+            [8675] = 2405, -- Voidstorm Voidburrow -> Voidstorm
+        },
+        continentUiMapID = midnightIDs["Quel'Thalas"],
+    }
 
     -- Rares
     local midnightRares = {
@@ -269,16 +282,16 @@ addon:RegisterDatabaseInit("midnight", function()
 
     -- Delves Database
     local midnightDelves = {
-        { name = "Collegiate Calamity", delveID = 8426, zone = "Silvermoon City", x = 31.07, y = 27.33 },
-        { name = "The Darkway", delveID = 8440, zone = "Silvermoon City", x = 95.00, y = 5.00 },
-        { name = "The Shadow Enclave", delveID = 8438, zone = "Eversong Woods", x = 47.24, y = 4.68 },
-        { name = "Parhelion Plaza", delveID = 8428, zone = "Isle of Quel'Danas", x = 42.80, y = 36.12 },
-        { name = "Atal'Aman", delveID = 8444, zone = "Zul'Aman", x = 85.63, y = 13.85 },
-        { name = "Twilight Crypts", delveID = 8442, zone = "Zul'Aman", x = 10.57, y = 8.41 },
-        { name = "The Grudge Pit", delveID = 8434, zone = "Harandar", x = 50.49, y = 5.88 },
-        { name = "The Gulf of Memory", delveID = 8436, zone = "Harandar", x = 55.20, y = 26.80 },
-        { name = "Shadowguard Point", delveID = 8432, zone = "Voidstorm", x = 18.14, y = 84.33 },
-        { name = "Sunkiller Sanctum", delveID = 8430, zone = "Voidstorm", x = 19.67, y = 56.68 },
+        { name = "Collegiate Calamity", delveID = 8426, zone = "Silvermoon City", x = 40.76, y = 54.06 },
+        { name = "The Darkway", delveID = 8440, zone = "Silvermoon City", x = 39.30, y = 32.10 },
+        { name = "The Shadow Enclave", delveID = 8438, zone = "Eversong Woods", x = 45.40, y = 86.00 },
+        { name = "Parhelion Plaza", delveID = 8428, zone = "Isle of Quel'Danas", x = 47.74, y = 41.58 },
+        { name = "Atal'Aman", delveID = 8444, zone = "Zul'Aman", x = 24.80, y = 53.00 },
+        { name = "Twilight Crypts", delveID = 8442, zone = "Zul'Aman", x = 25.40, y = 84.30 },
+        { name = "The Grudge Pit", delveID = 8434, zone = "Harandar", x = 70.50, y = 64.90 },
+        { name = "The Gulf of Memory", delveID = 8436, zone = "Harandar", x = 36.30, y = 49.20 },
+        { name = "Shadowguard Point", delveID = 8432, zone = "Voidstorm", x = 37.38, y = 47.70 },
+        { name = "Sunkiller Sanctum", delveID = 8430, zone = "Voidstorm", x = 54.80, y = 47.00 },
     }
     addon.delvesDB = addon.delvesDB or {}
     for _, v in ipairs(midnightDelves) do

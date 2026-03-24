@@ -1134,6 +1134,14 @@ local function BuildTab_General(parent)
     end)
     cbHideCombat:SetPoint("TOPLEFT", 30, y)
     cbHideCombat.check:SetChecked(HomeworkTrackerDB.hideInCombat)
+    y = y - SMALL_GAP - 14
+    
+    local cbHideOutsideMajor = CreateCheckbox(parent, "Hide outside major cities", function(val)
+        HomeworkTrackerDB.hideOutsideMajorCities = val
+        if addon.CheckVisibilityState then addon:CheckVisibilityState() end
+    end)
+    cbHideOutsideMajor:SetPoint("TOPLEFT", 30, y)
+    cbHideOutsideMajor.check:SetChecked(HomeworkTrackerDB.hideOutsideMajorCities)
     y = y - BIG_GAP + 10
     
     local hExp = CreateHeader(parent, "Expansions")
@@ -1530,7 +1538,7 @@ local function BuildTab_Appearance(parent)
     cpRight:SetPoint("TOPLEFT", 30, y)
     y = y - SMALL_GAP - 14
 
-    local cpHdr = CreateColorPicker(parent, "Tracker Header Color", colors, "headerText",
+    local cpHdr = CreateColorPicker(parent, "Header Text Color", colors, "headerText",
         colors.headerText[1], colors.headerText[2], colors.headerText[3])
     cpHdr:SetPoint("TOPLEFT", 30, y)
     y = y - SMALL_GAP - 14

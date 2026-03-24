@@ -23,6 +23,7 @@ local defaults = {
         hideInParty = false,
         hideInRaid = false,
         hideInCombat = false,
+        hideOutsideMajorCities = false,
         width = 280,
         height = 400,
     scale = 1.4,
@@ -109,6 +110,8 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         if addon.InvalidateDataCache then addon:InvalidateDataCache() end
         if addon.CheckVisibilityState then addon:CheckVisibilityState() end
         if addon.UpdateDisplay then addon:UpdateDisplay() end
+        if addon.RefreshTitleBar then addon:RefreshTitleBar() end
+        if addon.CheckVisibilityAndTriggerGreatVault then addon:CheckVisibilityAndTriggerGreatVault() end
     elseif event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then
         if addon.CheckVisibilityState then addon:CheckVisibilityState() end
     elseif event == "QUEST_TURNED_IN" or event == "QUEST_LOG_UPDATE"

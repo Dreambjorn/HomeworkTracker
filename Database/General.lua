@@ -6,7 +6,7 @@ addon:RegisterDatabaseInit("general", function()
     addon.currencyDB = addon.currencyDB or {}
     table.insert(addon.currencyDB, { name = "Community Coupons", id = 3363, icon = 134495 })
     table.insert(addon.currencyDB, { name = "Restored Coffer Key", id = 3028, icon = 4622270 })
-    table.insert(addon.currencyDB, { name = "Coffer Key Shards", id = 3310, icon = 133016, max = 600 })
+    table.insert(addon.currencyDB, { name = "Coffer Key Shards", id = 3310, icon = 133016})
     table.insert(addon.currencyDB, { name = "Undercoin", id = 2803, icon = 133858 })
     -- Define global categories
     addon.categoryInfo = addon.categoryInfo or {}
@@ -45,7 +45,51 @@ addon:RegisterDatabaseInit("general", function()
         addon.defaults.currency = addon.defaults.currency or { enable = true }
         addon.defaults.currency[3363] = true  -- Community Coupons
         addon.defaults.currency[3028] = true  -- Restored Coffer Key
-        addon.defaults.currency[3310] = false -- Coffer Key Shards
+        addon.defaults.currency[3310] = true  -- Coffer Key Shards
         addon.defaults.currency[2803] = true  -- Undercoin
+        addon.majorCities = addon.majorCities or {
+            -- Vanilla
+            [84] = true,    -- Stormwind City
+            [85] = true,    -- Orgrimmar
+            [87] = true,    -- Ironforge
+            [89] = true,    -- Darnassus
+            [88] = true,    -- Thunder Bluff
+            [90] = true,    -- Undercity
+
+            -- Burning Crusade
+            [103] = true,   -- The Exodar
+            [110] = true,   -- Silvermoon City
+            [111] = true,   -- Shattrath City
+
+            -- Wrath of the Lich King
+            [125] = true,   -- Dalaran
+
+            -- Mists of Pandaria
+            [390] = true,   -- Shrine of the Seven Stars
+            [392] = true,   -- Shrine of Two Moons
+
+            -- Warlords of Draenor
+            [622] = true,   -- Stormshield
+            [624] = true,   -- Warspear
+
+            -- Legion
+            [627] = true,   -- Dalaran
+
+            -- Battle for Azeroth
+            [1161] = true,  -- Boralus
+            [1165] = true,  -- Dazar'alor
+
+            -- Shadowlands
+            [1670] = true,  -- Oribos
+
+            -- Dragonflight
+            [2112] = true,  -- Valdrakken
+
+            -- The War Within 
+            [2339] = true,  -- Dornogal
+
+            -- Midnight
+            [2393] = true,  -- Silvermoon
+        }
     end
 end)
