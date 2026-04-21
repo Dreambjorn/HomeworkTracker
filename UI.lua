@@ -18,6 +18,7 @@ local function ReleaseContainer(container)
     container:SetScript("OnEnter", nil)
     container:SetScript("OnLeave", nil)
     container:SetScript("OnMouseUp", nil)
+    container:SetScript("OnMouseDown", nil)
     container:EnableMouse(false)
     container._activityKey = nil
     if container.icon then container.icon:SetTexture(nil); container.icon:Hide() end
@@ -719,106 +720,55 @@ function addon:UpdateGreatVaultSection(parent, yOffset, expStates)
         return 1
     end
 
-    if cfg.showRaid and #vaultData.raid > 0 then
-        local bar = self:CreateContainer(parent, yOffset, true)
-        bar.nameText:SetText("Raid")
+    local vaultSlots = {
+        { key = "raid",       label = "Raid",    show = cfg.showRaid },
+        { key = "mythicPlus", label = "Mythic+", show = cfg.showMythicPlus },
+        { key = "delves",     label = "Delves",  show = cfg.showDelves },
+    }
 
-        local valueText = ""
-        for i = 1, 3 do
-            if i <= #vaultData.raid and vaultData.raid[i].progress >= vaultData.raid[i].threshold then
-                local entry = vaultData.raid[i]
-                local lvl
-                if entry.itemLevel then
-                    lvl = mapRewardToIcon(entry.itemLevel)
-                elseif entry.rewardLevel then
-                    lvl = mapRewardToIcon(entry.rewardLevel)
-                elseif entry.level then
-                    lvl = entry.level
+    for _, slot in ipairs(vaultSlots) do
+        local entries = vaultData[slot.key]
+        if slot.show and #entries > 0 then
+            local bar = self:CreateContainer(parent, yOffset, true)
+            bar.nameText:SetText(slot.label)
+
+            local valueText = ""
+            for i = 1, 3 do
+                if i <= #entries and entries[i].progress >= entries[i].threshold then
+                    local entry = entries[i]
+                    local lvl
+                    if entry.itemLevel then
+                        lvl = mapRewardToIcon(entry.itemLevel)
+                    elseif entry.rewardLevel then
+                        lvl = mapRewardToIcon(entry.rewardLevel)
+                    elseif entry.level then
+                        lvl = entry.level
+                    else
+                        lvl = 1
+                    end
+                    if lvl < 1 then lvl = 1 end
+                    if lvl > 5 then lvl = 5 end
+                    valueText = valueText .. string.format("|A:Professions-ChatIcon-Quality-Tier%d:18:18::1|a ", lvl)
                 else
-                    lvl = 1
+                    valueText = valueText .. "|TInterface\\RaidFrame\\ReadyCheck-NotReady:18:18|t "
                 end
-                if lvl < 1 then lvl = 1 end
-                if lvl > 5 then lvl = 5 end
-                valueText = valueText .. string.format("|A:Professions-ChatIcon-Quality-Tier%d:18:18::1|a ", lvl)
-            else
-                valueText = valueText .. "|TInterface\\RaidFrame\\ReadyCheck-NotReady:18:18|t "
             end
-        end
-        bar.timeText:SetText(valueText)
-        
-        addon:SetBarColor(bar, r, g, b, 0.8)
-        
-        table.insert(self.sections, bar)
-        bar:Show()
-        yOffset = yOffset - 18
-    end
-    
-    if cfg.showMythicPlus and #vaultData.mythicPlus > 0 then
-        local bar = self:CreateContainer(parent, yOffset, true)
-        bar.nameText:SetText("Mythic+")
+            bar.timeText:SetText(valueText)
 
-        local valueText = ""
-        for i = 1, 3 do
-            if i <= #vaultData.mythicPlus and vaultData.mythicPlus[i].progress >= vaultData.mythicPlus[i].threshold then
-                local entry = vaultData.mythicPlus[i]
-                local lvl
-                if entry.itemLevel then
-                    lvl = mapRewardToIcon(entry.itemLevel)
-                elseif entry.rewardLevel then
-                    lvl = mapRewardToIcon(entry.rewardLevel)
-                elseif entry.level then
-                    lvl = entry.level
+            addon:SetBarColor(bar, r, g, b, 0.8)
+            bar:SetScript("OnMouseDown", function()
+                C_AddOns.LoadAddOn("Blizzard_WeeklyRewards")
+                if WeeklyRewardsFrame:IsShown() then
+                    HideUIPanel(WeeklyRewardsFrame)
                 else
-                    lvl = 1
+                    ShowUIPanel(WeeklyRewardsFrame)
                 end
-                if lvl < 1 then lvl = 1 end
-                if lvl > 5 then lvl = 5 end
-                valueText = valueText .. string.format("|A:Professions-ChatIcon-Quality-Tier%d:18:18::1|a ", lvl)
-            else
-                valueText = valueText .. "|TInterface\\RaidFrame\\ReadyCheck-NotReady:18:18|t "
-            end
-        end
-        bar.timeText:SetText(valueText)
-        
-        addon:SetBarColor(bar, r, g, b, 0.8)
-        
-        table.insert(self.sections, bar)
-        bar:Show()
-        yOffset = yOffset - 18
-    end
+            end)
 
-    if cfg.showDelves and #vaultData.delves > 0 then
-        local bar = self:CreateContainer(parent, yOffset, true)
-        bar.nameText:SetText("Delves")
-
-        local valueText = ""
-        for i = 1, 3 do
-            if i <= #vaultData.delves and vaultData.delves[i].progress >= vaultData.delves[i].threshold then
-                local entry = vaultData.delves[i]
-                local lvl
-                if entry.itemLevel then
-                    lvl = mapRewardToIcon(entry.itemLevel)
-                elseif entry.rewardLevel then
-                    lvl = mapRewardToIcon(entry.rewardLevel)
-                elseif entry.level then
-                    lvl = entry.level
-                else
-                    lvl = 1
-                end
-                if lvl < 1 then lvl = 1 end
-                if lvl > 5 then lvl = 5 end
-                valueText = valueText .. string.format("|A:Professions-ChatIcon-Quality-Tier%d:18:18::1|a ", lvl)
-            else
-                valueText = valueText .. "|TInterface\\RaidFrame\\ReadyCheck-NotReady:18:18|t "
-            end
+            table.insert(self.sections, bar)
+            bar:Show()
+            yOffset = yOffset - 18
         end
-        bar.timeText:SetText(valueText)
-        
-        addon:SetBarColor(bar, r, g, b, 0.8)
-        
-        table.insert(self.sections, bar)
-        bar:Show()
-        yOffset = yOffset - 18
     end
     
     return yOffset - 8
@@ -1154,8 +1104,15 @@ function addon:UpdateCurrencySection(parent, yOffset, expStates)
                     hasContent = true
                     local bar = self:CreateContainer(parent, yOffset, true)
                     local iconID = currency.icon or info.iconFileID
-                    
-                    bar.nameText:SetText(currency.name)
+
+                    local displayName
+                    if currency.isItem then
+                        displayName = C_Item.GetItemInfo(currency.id) or currency.name
+                    else
+                        local cInfo = C_CurrencyInfo.GetCurrencyInfo(currency.id)
+                        displayName = (cInfo and cInfo.name) or currency.name
+                    end
+                    bar.nameText:SetText(displayName)
                     
                     bar.icon:Hide()
                     addon:SetBarColor(bar, r, g, b, 0.8)

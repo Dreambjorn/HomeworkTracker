@@ -20,8 +20,9 @@ function addon:InvalidateDataCache()
     wipe(_dataCache)
 end
 
-
+-- Silently shows and hides WeeklyRewardsFrame to force a server data refresh
 function addon:RequestGreatVaultRequery()
+    if not self._allowVaultRequery then return end
     if _greatVaultRequeryFrame and _greatVaultRequeryFrame:IsShown() then
         _greatVaultRequeryFrame.t = 0
         return
@@ -37,6 +38,17 @@ function addon:RequestGreatVaultRequery()
         if self.t > 0.5 then
             self:Hide()
             self:SetScript("OnUpdate", nil)
+            -- Silent-show Blizzard's Great Vault UI to force a server/client refresh
+            if WeeklyRewardsFrame then
+                WeeklyRewardsFrame:SetAlpha(0)
+                WeeklyRewardsFrame:Show()
+                C_Timer.After(0.06, function()
+                    if WeeklyRewardsFrame then
+                        WeeklyRewardsFrame:Hide()
+                        WeeklyRewardsFrame:SetAlpha(1)
+                    end
+                end)
+            end
             if addon.InvalidateDataCache then addon:InvalidateDataCache() end
             if addon.CheckVisibilityState then addon:CheckVisibilityState() end
             if addon.UpdateDisplay then addon:UpdateDisplay() end
@@ -45,25 +57,6 @@ function addon:RequestGreatVaultRequery()
     end)
 end
 
--- Check visibility flip and trigger a Great Vault requery when the tracker becomes visible.
-function addon:CheckVisibilityAndTriggerGreatVault()
-    local wasVisible = self._wasVisible or false
-    local nowVisible = self.mainFrame and self.mainFrame:IsShown() or false
-
-    if nowVisible and not wasVisible then
-        if HomeworkTrackerDB and HomeworkTrackerDB.greatVault and HomeworkTrackerDB.greatVault.enable then
-            local now = GetTime()
-            if not self._lastGreatVaultRequery or (now - self._lastGreatVaultRequery) >= 1 then
-                self._lastGreatVaultRequery = now
-                if self.RequestGreatVaultRequery then
-                    self:RequestGreatVaultRequery()
-                end
-            end
-        end
-    end
-
-    self._wasVisible = nowVisible
-end
 
 -- Default font size
 function addon:GetDefaultFontSize()
@@ -1004,8 +997,6 @@ function addon:InitializeSavedVariables()
     end
     HomeworkTrackerDB.__activeProfile = active
 
-    -- Account-wide profiles table
-    local profiles = GetAccountProfiles()
     profiles["Default"] = profiles["Default"] or {}
 
     local activeProfile = HomeworkTrackerDB.__activeProfile
@@ -1215,7 +1206,6 @@ function addon:DeleteProfile(name)
     local profiles = GetAccountProfiles()
     if not profiles[name] then return false, "Profile not found" end
 
-    local profiles = GetAccountProfiles()
     profiles[name] = nil
     return true
 end

@@ -1,9 +1,9 @@
-## Interface: 120000, 120001
+## Interface: 120000, 120001, 120005
 ## Title: Homework Tracker
 ## IconTexture: 647701
 ## Notes: Tracks various game activities and progress
 ## Author: Dreambjorn
-## Version: 1.5.0
+## Version: 1.6.0
 ## Category: Homework
 ## SavedVariablesPerCharacter: HomeworkTrackerDB
 ## SavedVariables: HomeworkTrackerAccountDB

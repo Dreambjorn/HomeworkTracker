@@ -2733,6 +2733,104 @@ end
 
 function addon:RefreshConfigPanel() end
 
+local function BuildExpansionOptions()
+    local opts = {}
+    local map = {}
+    if HomeworkTrackerDB and HomeworkTrackerDB.expansions then
+        for k, v in pairs(HomeworkTrackerDB.expansions) do
+            if v then
+                local label = k:gsub("([a-z])([A-Z])","%1 %2"):gsub("_"," ")
+                label = label:gsub("^%l", string.upper)
+                table.insert(opts, label)
+                map[label] = k
+            end
+        end
+    end
+    table.sort(opts)
+    return opts, map
+end
+
+local function AttachExpansionDropdown(parent, yOffset)
+    local expDD = CreateHeaderDropdown(parent, 180)
+    expDD:SetPoint("TOP", parent, "TOP", 0, yOffset)
+    parent.expansionDropdown = expDD
+
+    local labelToKey = {}
+    local function RefreshExpansionDropdown()
+        local opts, map = BuildExpansionOptions()
+        labelToKey = map
+        if #opts == 0 then
+            expDD:SetOptions({"(no expansions enabled)"})
+            expDD:SetValue("(no expansions enabled)")
+            expDD:SetOnChange(nil)
+            return
+        end
+        expDD:SetOptions(opts)
+        local selKey = GetSelectedExpansion()
+        local selLabel = nil
+        for lbl, k in pairs(map) do if k == selKey then selLabel = lbl; break end end
+        if not selLabel then selLabel = opts[1]; HomeworkTrackerDB.ui = HomeworkTrackerDB.ui or {}; HomeworkTrackerDB.ui.selectedExpansion = map[selLabel] end
+        expDD:SetValue(selLabel)
+    end
+
+    expDD:SetOnChange(function(label)
+        if not labelToKey[label] then return end
+        HomeworkTrackerDB.ui = HomeworkTrackerDB.ui or {}
+        HomeworkTrackerDB.ui.selectedExpansion = labelToKey[label]
+        RefreshContent()
+        addon:UpdateDisplay()
+    end)
+
+    RefreshExpansionDropdown()
+    return expDD
+end
+
+local function AttachSidebarAndScroll(parent, sidebarTopOffset)
+    local sb = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    sb:SetPoint("TOPLEFT", 10, sidebarTopOffset)
+    sb:SetPoint("BOTTOMLEFT", 10, 10)
+    sb:SetWidth(SIDEBAR_WIDTH)
+    sb:SetBackdrop({
+        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true, tileSize = 16, edgeSize = 12,
+        insets = { left = 2, right = 2, top = 2, bottom = 2 }
+    })
+    sb:SetBackdropColor(unpack(COLOR_Sidebar))
+    sb:SetBackdropBorderColor(0.2, 0.2, 0.2, 1)
+
+    sb.buttons = {}
+    for i, tab in ipairs(tabs) do
+        local btn = CreateSidebarButton(sb, tab.name, i)
+        table.insert(sb.buttons, btn)
+    end
+
+    local cf = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
+    cf:SetPoint("TOPLEFT", sb, "TOPRIGHT", 10, 0)
+    cf:SetPoint("BOTTOMRIGHT", -36, 10)
+
+    cf:SetScript("OnMouseWheel", function(self, delta)
+        local current = self:GetVerticalScroll()
+        local step = 30
+        if delta > 0 then
+            self:SetVerticalScroll(math.max(0, current - step))
+        else
+            self:SetVerticalScroll(math.min(self:GetVerticalScrollRange(), current + step))
+        end
+    end)
+
+    local child = CreateFrame("Frame", nil, cf)
+    child:SetSize(CONFIG_WIDTH - SIDEBAR_WIDTH - 66, 1)
+    cf:SetScrollChild(child)
+    cf:SetScript("OnSizeChanged", function(self)
+        local w = self:GetWidth()
+        if w and w > 0 then child:SetWidth(math.max(w - 20, 200)) end
+    end)
+
+    cf.scrollChild = child
+    return sb, cf
+end
+
 -- Init options window
 function addon:CreateConfigPanel()
     if self.configFrame then return end
@@ -2767,55 +2865,8 @@ function addon:CreateConfigPanel()
     title:SetText("Homework Tracker Config")
     title:SetTextColor(1, 0.8, 0)
 
-    local function BuildExpansionOptions()
-        local opts = {}
-        local map = {}
-        if HomeworkTrackerDB and HomeworkTrackerDB.expansions then
-            for k, v in pairs(HomeworkTrackerDB.expansions) do
-                if v then
-                    local label = k:gsub("([a-z])([A-Z])","%1 %2"):gsub("_"," ")
-                    label = label:gsub("^%l", string.upper)
-                    table.insert(opts, label)
-                    map[label] = k
-                end
-            end
-        end
-        table.sort(opts)
-        return opts, map
-    end
-
-    local expDD = CreateHeaderDropdown(f, 180)
-    expDD:SetPoint("TOP", f, "TOP", 0, -12)
     configFrame = f
-    f.expansionDropdown = expDD
-
-    local labelToKey = {}
-    local function RefreshExpansionDropdown()
-        local opts, map = BuildExpansionOptions()
-        labelToKey = map
-        if #opts == 0 then
-            expDD:SetOptions({"(no expansions enabled)"})
-            expDD:SetValue("(no expansions enabled)")
-            expDD:SetOnChange(nil)
-            return
-        end
-        expDD:SetOptions(opts)
-        local selKey = GetSelectedExpansion()
-        local selLabel = nil
-        for lbl, k in pairs(map) do if k == selKey then selLabel = lbl; break end end
-        if not selLabel then selLabel = opts[1]; HomeworkTrackerDB.ui = HomeworkTrackerDB.ui or {}; HomeworkTrackerDB.ui.selectedExpansion = map[selLabel] end
-        expDD:SetValue(selLabel)
-    end
-
-    expDD:SetOnChange(function(label)
-        if not labelToKey[label] then return end
-        HomeworkTrackerDB.ui = HomeworkTrackerDB.ui or {}
-        HomeworkTrackerDB.ui.selectedExpansion = labelToKey[label]
-        RefreshContent()
-        addon:UpdateDisplay()
-    end)
-
-    RefreshExpansionDropdown()
+    AttachExpansionDropdown(f, -12)
 
     local closeBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     closeBtn:SetSize(24, 24)
@@ -2823,52 +2874,9 @@ function addon:CreateConfigPanel()
     closeBtn:SetText("X")
     closeBtn:SetScript("OnClick", function() f:Hide() end)
 
-    sidebar = CreateFrame("Frame", nil, f, "BackdropTemplate")
-    sidebar:SetPoint("TOPLEFT", 10, -40)
-    sidebar:SetPoint("BOTTOMLEFT", 10, 10)
-    sidebar:SetWidth(SIDEBAR_WIDTH)
-    sidebar:SetBackdrop({
-        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 12,
-        insets = { left = 2, right = 2, top = 2, bottom = 2 }
-    })
-    sidebar:SetBackdropColor(unpack(COLOR_Sidebar))
-    sidebar:SetBackdropBorderColor(0.2, 0.2, 0.2, 1)
-    
-    sidebar.buttons = {}
-    for i, tab in ipairs(tabs) do
-        local btn = CreateSidebarButton(sidebar, tab.name, i)
-        table.insert(sidebar.buttons, btn)
-    end
-    
-    local cf = CreateFrame("ScrollFrame", nil, f, "UIPanelScrollFrameTemplate")
-    cf:SetPoint("TOPLEFT", sidebar, "TOPRIGHT", 10, 0)
-    cf:SetPoint("BOTTOMRIGHT", -36, 10)
-    
-    cf:SetScript("OnMouseWheel", function(self, delta)
-        local current = self:GetVerticalScroll()
-        local step = 30
-        if delta > 0 then
-            self:SetVerticalScroll(math.max(0, current - step))
-        else
-            self:SetVerticalScroll(math.min(self:GetVerticalScrollRange(), current + step))
-        end
-    end)
-    
-    local child = CreateFrame("Frame", nil, cf)
-    child:SetSize(CONFIG_WIDTH - SIDEBAR_WIDTH - 66, 1)
-    cf:SetScrollChild(child)
-    -- Keep scroll child width in sync with the Settings panel canvas size
-    cf:SetScript("OnSizeChanged", function(self)
-        local w = self:GetWidth()
-        if w and w > 0 then
-            child:SetWidth(math.max(w - 20, 200))
-        end
-    end)
-    
+    local sb, cf = AttachSidebarAndScroll(f, -40)
+    sidebar = sb
     contentFrame = cf
-    contentFrame.scrollChild = child
 
     floatingSidebar = sidebar
     floatingContentFrame = contentFrame
@@ -2886,99 +2894,11 @@ local function BuildCanvasContent()
 
     local f = settingsCanvas
 
-    local function BuildExpansionOptions()
-        local opts = {}
-        local map = {}
-        if HomeworkTrackerDB and HomeworkTrackerDB.expansions then
-            for k, v in pairs(HomeworkTrackerDB.expansions) do
-                if v then
-                    local label = k:gsub("([a-z])([A-Z])","%1 %2"):gsub("_"," ")
-                    label = label:gsub("^%l", string.upper)
-                    table.insert(opts, label)
-                    map[label] = k
-                end
-            end
-        end
-        table.sort(opts)
-        return opts, map
-    end
+    AttachExpansionDropdown(f, -8)
 
-    local expDD = CreateHeaderDropdown(f, 180)
-    expDD:SetPoint("TOP", f, "TOP", 0, -8)
-    f.expansionDropdown = expDD
-
-    local labelToKey = {}
-    local function RefreshExpansionDropdown()
-        local opts, map = BuildExpansionOptions()
-        labelToKey = map
-        if #opts == 0 then
-            expDD:SetOptions({"(no expansions enabled)"})
-            expDD:SetValue("(no expansions enabled)")
-            expDD:SetOnChange(nil)
-            return
-        end
-        expDD:SetOptions(opts)
-        local selKey = GetSelectedExpansion()
-        local selLabel = nil
-        for lbl, k in pairs(map) do if k == selKey then selLabel = lbl; break end end
-        if not selLabel then selLabel = opts[1]; HomeworkTrackerDB.ui = HomeworkTrackerDB.ui or {}; HomeworkTrackerDB.ui.selectedExpansion = map[selLabel] end
-        expDD:SetValue(selLabel)
-    end
-
-    expDD:SetOnChange(function(label)
-        if not labelToKey[label] then return end
-        HomeworkTrackerDB.ui = HomeworkTrackerDB.ui or {}
-        HomeworkTrackerDB.ui.selectedExpansion = labelToKey[label]
-        RefreshContent()
-        addon:UpdateDisplay()
-    end)
-
-    RefreshExpansionDropdown()
-
-    local sb = CreateFrame("Frame", nil, f, "BackdropTemplate")
-    sb:SetPoint("TOPLEFT", 10, -36)
-    sb:SetPoint("BOTTOMLEFT", 10, 10)
-    sb:SetWidth(SIDEBAR_WIDTH)
-    sb:SetBackdrop({
-        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 12,
-        insets = { left = 2, right = 2, top = 2, bottom = 2 }
-    })
-    sb:SetBackdropColor(unpack(COLOR_Sidebar))
-    sb:SetBackdropBorderColor(0.2, 0.2, 0.2, 1)
-
+    local sb, cf = AttachSidebarAndScroll(f, -36)
     sidebar = sb
-    sb.buttons = {}
-    for i, tab in ipairs(tabs) do
-        local btn = CreateSidebarButton(sb, tab.name, i)
-        table.insert(sb.buttons, btn)
-    end
-
-    local cf = CreateFrame("ScrollFrame", nil, f, "UIPanelScrollFrameTemplate")
-    cf:SetPoint("TOPLEFT", sb, "TOPRIGHT", 10, 0)
-    cf:SetPoint("BOTTOMRIGHT", -36, 10)
-
-    cf:SetScript("OnMouseWheel", function(self, delta)
-        local current = self:GetVerticalScroll()
-        local step = 30
-        if delta > 0 then
-            self:SetVerticalScroll(math.max(0, current - step))
-        else
-            self:SetVerticalScroll(math.min(self:GetVerticalScrollRange(), current + step))
-        end
-    end)
-
-    local child = CreateFrame("Frame", nil, cf)
-    child:SetSize(CONFIG_WIDTH - SIDEBAR_WIDTH - 66, 1)
-    cf:SetScrollChild(child)
-    cf:SetScript("OnSizeChanged", function(self)
-        local w = self:GetWidth()
-        if w and w > 0 then child:SetWidth(math.max(w - 20, 200)) end
-    end)
-
     contentFrame = cf
-    contentFrame.scrollChild = child
     configFrame = f
 
     canvasSidebar = sb

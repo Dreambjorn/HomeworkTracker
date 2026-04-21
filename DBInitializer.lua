@@ -19,8 +19,6 @@ function addon:RegisterDatabaseInit(key, fn)
                 return
             end
         end
-        self.dbInitMap[key] = fn
-        return
     end
 
     table.insert(self.dbInitializers, { key = key, fn = fn })

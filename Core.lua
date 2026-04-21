@@ -20,12 +20,12 @@ addon.defaultColors = {
 -- Define default settings
 local defaults = {
     enabled = true,
-        hideInParty = false,
-        hideInRaid = false,
-        hideInCombat = false,
-        hideOutsideMajorCities = false,
-        width = 280,
-        height = 400,
+    hideInParty = false,
+    hideInRaid = false,
+    hideInCombat = false,
+    hideOutsideMajorCities = false,
+    width = 280,
+    height = 400,
     scale = 1.4,
     position = { point = "TOPLEFT", relativePoint = "BOTTOMLEFT", xOfs = 0, yOfs = 550 },
     activities = {
@@ -66,12 +66,12 @@ SLASH_HOMEWORKTRACKER2 = "/hw"
 SlashCmdList["HOMEWORKTRACKER"] = function(msg)
     local cmd = msg and msg:lower():match("^%s*(%S+)") or ""
     if cmd == "toggle" then
-        HomeworkTrackerDB.enabled = not (HomeworkTrackerDB.enabled ~= false)
+        HomeworkTrackerDB.enabled = not (HomeworkTrackerDB.enabled == true)
         addon:UpdateDisplay()
         if addon._enabledCheckbox then
-            addon._enabledCheckbox.check:SetChecked(HomeworkTrackerDB.enabled ~= false)
+            addon._enabledCheckbox.check:SetChecked(HomeworkTrackerDB.enabled == true)
         end
-        print("|cff4db2ffHomeworkTracker:|r Tracker " .. (HomeworkTrackerDB.enabled ~= false and "enabled" or "disabled"))
+        print("|cff4db2ffHomeworkTracker:|r Tracker " .. (HomeworkTrackerDB.enabled == true and "enabled" or "disabled"))
     else
         addon:OpenConfig()
     end
@@ -102,16 +102,23 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         addon:RunDatabaseInit()
         addon:InitializeSavedVariables()
         addon:CreateUI()
+        addon._allowVaultRequery = false
         if addon.CheckVisibilityState then addon:CheckVisibilityState() end
     elseif event == "PLAYER_LOGIN" then
         if addon.CheckVisibilityState then addon:CheckVisibilityState() end
         if addon.UpdateDisplay then addon:UpdateDisplay() end
     elseif event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" or event == "WALK_IN_DATA_UPDATE" then
+        local wasInInstance = addon._inInstance or addon._inDelves
         if addon.InvalidateDataCache then addon:InvalidateDataCache() end
         if addon.CheckVisibilityState then addon:CheckVisibilityState() end
         if addon.UpdateDisplay then addon:UpdateDisplay() end
         if addon.RefreshTitleBar then addon:RefreshTitleBar() end
-        if addon.CheckVisibilityAndTriggerGreatVault then addon:CheckVisibilityAndTriggerGreatVault() end
+        if not addon._allowVaultRequery then
+            C_Timer.After(5, function() addon._allowVaultRequery = true end)
+        end
+        if wasInInstance and addon._allowVaultRequery then
+            if addon.RequestGreatVaultRequery then addon:RequestGreatVaultRequery() end
+        end
     elseif event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then
         if addon.CheckVisibilityState then addon:CheckVisibilityState() end
     elseif event == "QUEST_TURNED_IN" or event == "QUEST_LOG_UPDATE"

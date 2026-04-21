@@ -24,10 +24,6 @@ function addon:GetAbundanceInfo()
     local mapName = nil
     local poiID, uiMapID = addon:GetActiveAbundance()
     if poiID and uiMapID then
-        local AH = addon.abundantHarvest
-        if AH and C_AreaPoiInfo and C_AreaPoiInfo.GetAreaPOIInfo then
-            local poiInfo = C_AreaPoiInfo.GetAreaPOIInfo(AH.continentUiMapID, poiID)
-        end
         if C_Map and C_Map.GetMapInfo then
             local mapInfo = C_Map.GetMapInfo(uiMapID)
             mapName = mapInfo and mapInfo.name or nil
