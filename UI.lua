@@ -8,10 +8,30 @@ local TITLE_BAR_HEIGHT = 21
 local containerPool = {}
 local headerPool = {}
 
+-- Only hide a tooltip when it belongs to the HomeworkTracker frame being
+-- recycled. Hiding GameTooltip unconditionally also closes unrelated item
+-- tooltips while the tracker refreshes in response to events such as
+-- BAG_UPDATE_DELAYED.
+local function HideTooltipOwnedBy(frame)
+    local owner = GameTooltip:GetOwner()
+
+    while owner do
+        if owner == frame then
+            GameTooltip:Hide()
+            return
+        end
+
+        if not owner.GetParent then
+            return
+        end
+        owner = owner:GetParent()
+    end
+end
+
 -- Recycle unused containers
 local function ReleaseContainer(container)
     if not container then return end
-    GameTooltip:Hide()
+    HideTooltipOwnedBy(container)
     container:Hide()
     container:ClearAllPoints()
     container:SetParent(nil)
@@ -481,7 +501,7 @@ function addon:CreateContainer(parent, yOffset, hasBar, indent)
         container.timeText:SetScript("OnEnter", nil)
         container.timeText:SetScript("OnLeave", nil)
     end
-    GameTooltip:Hide()
+    HideTooltipOwnedBy(container)
     
     if not container.icon then
         container.icon = container:CreateTexture(nil, "OVERLAY")
