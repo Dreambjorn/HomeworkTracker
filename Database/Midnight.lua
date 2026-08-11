@@ -9,15 +9,20 @@ addon:RegisterDatabaseInit("midnight", function()
         local currencyDefaults = {
             [3316] =   true,   -- Voidlight Marl
             [3392] =   true,   -- Remnant of Anguish
-            [3212] =   true,   -- Radiant Spark Dust
-            [3378] =   true,   -- Dawnlight Manaflux
+            [3509] =   true,   -- Tidal Spark Dust
+            [3465] =   true,   -- Venomblight Manaflux
+            [3418] =   true,   -- Nebulous Voidcore
             [3356] =   false,  -- Untainted Mana-Crystals
             [3379] =   false,  -- Brimming Arcana
             [3376] =   true,   -- Shard of Dundun
             [3377] =   true,   -- Unalloyed Abundance
             [3385] =   true,   -- Luminous Dust
+            [3448] =   true,   -- Corrosive Coin
+            [3546] =   false,  -- Coiled Filament
             [259361] = true,   -- Vile Essence
             [255826] = true,   -- Mysterious Skyshards
+            [274422] = true,   -- Ossified Relic
+            [273000] = true,   -- Corrosive Soul
         }
         for id, val in pairs(currencyDefaults) do
             addon.defaults.currency[id] = val
@@ -39,6 +44,8 @@ addon:RegisterDatabaseInit("midnight", function()
         [2413] = true, -- Harandar
         [2405] = true, -- Voidstorm
         [2444] = true, -- Slayer's Rise
+        [2512] = true, -- The Coiled Isle
+        [2509] = true, -- Vaults of Atal'Utek
     }
 
     -- Zone IDs
@@ -51,6 +58,7 @@ addon:RegisterDatabaseInit("midnight", function()
         ["Zul'Aman"]            = 2437,
         ["Harandar"]            = 2413,
         ["Voidstorm"]           = 2405,
+        ["The Coiled Isle"]     = 2512,
     }
     for k, v in pairs(midnightIDs) do addon.zoneIDs[k] = v end
 
@@ -58,6 +66,7 @@ addon:RegisterDatabaseInit("midnight", function()
     addon.zoneAliases = addon.zoneAliases or {}
     addon.zoneAliases["Slayer's Rise"] = "Voidstorm"
     addon.zoneAliases["Masters' Perch"] = "Voidstorm"
+    addon.zoneAliases["Vaults of Atal'Utek"] = "The Coiled Isle"
 
     -- Zone categories
     addon.zoneCategoryMap = addon.zoneCategoryMap or {}
@@ -68,7 +77,7 @@ addon:RegisterDatabaseInit("midnight", function()
         ["Zul'Aman"]            = "zulaman",
         ["Harandar"]            = "harandar",
         ["Voidstorm"]           = "voidstorm",
-
+        ["The Coiled Isle"]     = "coiledisle",
     }
     for k, v in pairs(midnightZoneCats) do addon.zoneCategoryMap[k] = v end
 
@@ -82,14 +91,22 @@ addon:RegisterDatabaseInit("midnight", function()
         ["Zul'Aman"]            = 5,
         ["Harandar"]            = 6,
         ["Voidstorm"]           = 7,
+        ["The Coiled Isle"]     = 8,
     }
     for k, v in pairs(midnightZones) do addon.zonePriority[k] = v end
+
+    -- Per-faction reputation colors, for reputations that should not inherit their zone color
+    if addon.defaultColors then
+        addon.defaultColors.reputations = addon.defaultColors.reputations or {}
+        addon.defaultColors.reputations[2792] = {0.36, 0.10, 0.40} -- Ritual Sites
+    end
 
     -- Categories
     addon.categoryInfo = addon.categoryInfo or {}
     if not addon.categoryInfo["general"] then
         addon.categoryInfo["general"] = { order = 1, color = addon.defaultColors.general or {0.255, 0.439, 0.929} }
     end
+    
     local midnightCategories = {
         ["quelthalas"]    = { order = 2, color = {0.77, 0.12, 0.23} },
         ["eversong"]      = { order = 3, color = {0.35, 0.75, 0.40} },
@@ -97,7 +114,8 @@ addon:RegisterDatabaseInit("midnight", function()
         ["zulaman"]       = { order = 5, color = {0.70, 0.45, 0.20} },
         ["harandar"]      = { order = 6, color = {0.30, 0.55, 0.20} },
         ["voidstorm"]     = { order = 7, color = {0.45, 0.15, 0.65} },
-        ["delves"]        = { order = 8, color = (addon.defaultColors and addon.defaultColors.delves) or {0.85, 0.65, 0.20} },
+        ["coiledisle"]    = { order = 8, color = {0.25, 0.62, 0.45} },
+        ["delves"]        = { order = 9, color = (addon.defaultColors and addon.defaultColors.delves) or {0.85, 0.65, 0.20} },
     }
     for k, v in pairs(midnightCategories) do addon.categoryInfo[k] = v end
 
@@ -122,6 +140,7 @@ addon:RegisterDatabaseInit("midnight", function()
             zulaman    = {0.70, 0.45, 0.20},
             harandar   = {0.30, 0.55, 0.20},
             voidstorm  = {0.45, 0.15, 0.65},
+            coiledisle = {0.25, 0.62, 0.45},
         }
         for k, v in pairs(midnightColors) do
             addon.defaultColors.zones[k] = v
@@ -163,19 +182,20 @@ addon:RegisterDatabaseInit("midnight", function()
             questID = {
                 normal = { 91124,91123,91122,91121,91120,91119,91118,91117,91116,91115,91114,91113,91112,91111,91110,91109,91108,91107,91106,91105,91104,91103,91102,91101,91100,91099,91098,91097,91096,91095 },
                 hard =   { 91255,91254,91253,91252,91251,91250,91249,91248,91247,91246,91245,91244,91243,91242,91240,91238,91236,91234,91232,91230,91228,91226,91224,91222,91220,91218,91216,91214,91212,91210 },
-                nightmare = { 91269,91268,91267,91266,91265,91264,91263,91262,91261,91260,91259,91258,91257,91256,91241,91239,91237,91235,91233,91231,91229,91227,91225,91223,91221,91219,91217,91215,91213,91211 },
+                nightmare = { 95024,95023,95022,95021,91269,91268,91267,91266,91265,91264,91263,91262,91261,91260,91259,91258,91257,91256,91241,91239,91237,91235,91233,91231,91229,91227,91225,91223,91221,91219,91217,91215,91213,91211 },
             },
         },
-        { name = "World Boss", questID = {92636, 92560, 92034, 92123}, questType = "single", isWeekend = false, category = "general", 
-          bossNames = {[92636] = "Predaxas", [92560] = "Lu'ashal", [92034] = "Thorm'belan", [92123] = "Cragpine"} },
-        { name = "Saltheril's Soiree", questID = {90575,90573,90574,90576}, questType = "single", isWeekend = false, category = "eversong" },
-        { name = "Abundance", questID = {89507}, questType = "simple", isWeekend = false, category = "zulaman", handler = "abundance" },
-        { name = "Lost Legends", questID = {89268}, questType = "simple", isWeekend = false, category = "harandar" },
-        { name = "Stormarion Assault", questID = {90962}, questType = "simple", isWeekend = false, category = "voidstorm" },
-        { name = "Stand Your Ground", questID = {94581}, questType = "simple", isWeekend = false, category = "voidstorm" },
-        { name = "Preparing for Battle", questID = {89354}, questType = "simple", isWeekend = false, category = "voidstorm" },
-        { name = "A Gnawing Void of Curiosity", questID = {93784}, questType = "simple", isWeekend = false, category = "delves" },
-        { name = "Trovehunter's Bounty", questID = {86371}, questType = "simple", isWeekend = false, category = "delves" },
+        { name = "Lair: Nymrissa Wavecaller",   questID = {97128},                   questType = "simple", isWeekend = false, category = "general" },
+        { name = "Saltheril's Soiree",          questID = {90575,90573,90574,90576}, questType = "single", isWeekend = false, category = "eversong" },
+        { name = "Abundance",                   questID = {89507},                   questType = "simple", isWeekend = false, category = "zulaman",      handler = "abundance" },
+        { name = "Lost Legends",                questID = {89268},                   questType = "simple", isWeekend = false, category = "harandar" },
+        { name = "Stormarion Assault",          questID = {90962},                   questType = "simple", isWeekend = false, category = "voidstorm" },
+        { name = "Stand Your Ground",           questID = {94581},                   questType = "simple", isWeekend = false, category = "voidstorm" },
+        { name = "Preparing for Battle",        questID = {89354},                   questType = "simple", isWeekend = false, category = "voidstorm" },
+        { name = "Turn Back the Surge",         questID = {96995},                   questType = "simple", isWeekend = false, category = "coiledisle" },
+        { name = "Purging the Vaults",          questID = {95520},                   questType = "simple", isWeekend = false, category = "coiledisle" },
+        { name = "A Gnawing Void of Curiosity", questID = {93784},                   questType = "simple", isWeekend = false, category = "delves" },
+        { name = "Trovehunter's Bounty",        questID = {86371},                   questType = "simple", isWeekend = false, category = "delves" },
     }
     addon.weeklyDB = addon.weeklyDB or {}
     for _, v in ipairs(midnightWeekly) do
@@ -197,81 +217,97 @@ addon:RegisterDatabaseInit("midnight", function()
     -- Rares
     local midnightRares = {
         -- Harandar
-        { name = "Rhazul",                    npcID = 248741, questID = 91832, repQuestID = 94712,      zone = "Harandar", x = 51.17, y = 45.30 },
-        { name = "Chironex",                  npcID = 249844, questID = 92137, repQuestID = 94713,      zone = "Harandar", x = 68.01, y = 40.33 },
-        { name = "Ha'kalawe",                 npcID = 249849, questID = 92142, repQuestID = 94714,      zone = "Harandar", x = 67.69, y = 62.28 },
-        { name = "Tallcap the Truthspreader", npcID = 249902, questID = 92148, repQuestID = 94715,      zone = "Harandar", x = 72.63, y = 69.26 },
-        { name = "Queen Lashtongue",          npcID = 249962, questID = 92154, repQuestID = 94716,      zone = "Harandar", x = 60.10, y = 47.01 },
-        { name = "Chlorokyll",                npcID = 249997, questID = 92161, repQuestID = 94717,      zone = "Harandar", x = 64.90, y = 48.10 },
-        { name = "Stumpy",                    npcID = 250086, questID = 92168, repQuestID = 94718,      zone = "Harandar", x = 65.65, y = 32.79 },
-        { name = "Serrasa",                   npcID = 250180, questID = 92170, repQuestID = 94719,      zone = "Harandar", x = 56.78, y = 34.22 },
-        { name = "Mindrot",                   npcID = 250226, questID = 92172, repQuestID = 94720,      zone = "Harandar", x = 46.35, y = 32.84 },
-        { name = "Dracaena",                  npcID = 250231, questID = 92176, repQuestID = 94721,      zone = "Harandar", x = 40.65, y = 42.99 },
-        { name = "Treetop",                   npcID = 250246, questID = 92183, repQuestID = 94722,      zone = "Harandar", x = 36.59, y = 75.16 },
-        { name = "Oro'ohna",                  npcID = 250317, questID = 92190, repQuestID = 94723,      zone = "Harandar", x = 28.11, y = 81.81 },
-        { name = "Pterrock",                  npcID = 250321, questID = 92191, repQuestID = 94724,      zone = "Harandar", x = 27.19, y = 70.21 },
-        { name = "Ahl'ua'huhi",               npcID = 250347, questID = 92193, repQuestID = 94725,      zone = "Harandar", x = 39.69, y = 60.70 },
-        { name = "Annulus the Worldshaker",   npcID = 250358, questID = 92194,                          zone = "Harandar", x = 44.50, y = 16.10 },
+        { name = "Rhazul",                     npcID = 248741, questID = 91832, repQuestID = 94712, zone = "Harandar",           x = 51.17, y = 45.30 },
+        { name = "Chironex",                   npcID = 249844, questID = 92137, repQuestID = 94713, zone = "Harandar",           x = 68.01, y = 40.33 },
+        { name = "Ha'kalawe",                  npcID = 249849, questID = 92142, repQuestID = 94714, zone = "Harandar",           x = 67.69, y = 62.28 },
+        { name = "Tallcap the Truthspreader",  npcID = 249902, questID = 92148, repQuestID = 94715, zone = "Harandar",           x = 72.63, y = 69.26 },
+        { name = "Queen Lashtongue",           npcID = 249962, questID = 92154, repQuestID = 94716, zone = "Harandar",           x = 60.10, y = 47.01 },
+        { name = "Chlorokyll",                 npcID = 249997, questID = 92161, repQuestID = 94717, zone = "Harandar",           x = 64.90, y = 48.10 },
+        { name = "Stumpy",                     npcID = 250086, questID = 92168, repQuestID = 94718, zone = "Harandar",           x = 65.65, y = 32.79 },
+        { name = "Serrasa",                    npcID = 250180, questID = 92170, repQuestID = 94719, zone = "Harandar",           x = 56.78, y = 34.22 },
+        { name = "Mindrot",                    npcID = 250226, questID = 92172, repQuestID = 94720, zone = "Harandar",           x = 46.35, y = 32.84 },
+        { name = "Dracaena",                   npcID = 250231, questID = 92176, repQuestID = 94721, zone = "Harandar",           x = 40.65, y = 42.99 },
+        { name = "Treetop",                    npcID = 250246, questID = 92183, repQuestID = 94722, zone = "Harandar",           x = 36.59, y = 75.16 },
+        { name = "Oro'ohna",                   npcID = 250317, questID = 92190, repQuestID = 94723, zone = "Harandar",           x = 28.11, y = 81.81 },
+        { name = "Pterrock",                   npcID = 250321, questID = 92191, repQuestID = 94724, zone = "Harandar",           x = 27.19, y = 70.21 },
+        { name = "Ahl'ua'huhi",                npcID = 250347, questID = 92193, repQuestID = 94725, zone = "Harandar",           x = 39.69, y = 60.70 },
+        { name = "Annulus the Worldshaker",    npcID = 250358, questID = 92194,                     zone = "Harandar",           x = 44.50, y = 16.10 },
 
         -- Voidstorm
-        { name = "Sundereth the Caller",      npcID = 244272, questID = 90805, repQuestID = 94728,      zone = "Voidstorm", x = 29.51, y = 50.08 },
-        { name = "Territorial Voidscythe",    npcID = 238498, questID = 91050, repQuestID = 94729,      zone = "Voidstorm", x = 34.02, y = 82.18 },
-        { name = "Tremora",                   npcID = 241443, questID = 91048, repQuestID = 94730,      zone = "Voidstorm", x = 36.30, y = 83.73 },
-        { name = "Screammaxa the Matriarch",  npcID = 256922, questID = 93966, repQuestID = 94731,      zone = "Voidstorm", x = 43.68, y = 51.51 },
-        { name = "Bane of the Vilebloods",    npcID = 256923, questID = 93946, repQuestID = 94732,      zone = "Voidstorm", x = 47.05, y = 80.63 },
-        { name = "Aeonelle Blackstar",        npcID = 256924, questID = 93944, repQuestID = 94751,      zone = "Voidstorm", x = 39.24, y = 63.94 },
-        { name = "Lotus Darkblossom",         npcID = 256925, questID = 93947, repQuestID = 94758,      zone = "Voidstorm", x = 37.88, y = 71.78 },
-        { name = "Queen o' War",              npcID = 256926, questID = 93934, repQuestID = 94761,      zone = "Voidstorm", x = 55.72, y = 79.45 },
-        { name = "Ravengerus",                npcID = 256808, questID = 93895, repQuestID = 94763,      zone = "Voidstorm", x = 48.81, y = 53.17 },
-        { name = "Bilemaw the Gluttonous",    npcID = 256770, questID = 93884, repQuestID = 94752,      zone = "Voidstorm", x = 35.48, y = 50.23 },
-        { name = "Nightbrood",                npcID = 245044, questID = 91051, repQuestID = 94759,      zone = "Voidstorm", x = 40.15, y = 41.19 },
-        { name = "Far'thana the Mad",         npcID = 256821, questID = 93896, repQuestID = 94755,      zone = "Voidstorm", x = 53.94, y = 62.72 },
-        { name = "Voidseer Orivane",          npcID = 248791, questID = 94459,                          zone = "Voidstorm", x = 30.57, y = 66.61 },
-        { name = "The Many-Broken",           npcID = 248459, questID = 94458,                          zone = "Voidstorm", x = 28.82, y = 70.24 },
-        { name = "Abysslick",                 npcID = 248700, questID = 94462,                          zone = "Voidstorm", x = 28.15, y = 65.93 },
-        { name = "Nullspiral",                npcID = 248068, questID = 94460,                          zone = "Voidstorm", x = 29.80, y = 67.87 },
-        { name = "Eruundi",                   npcID = 245044, questID = 91047, repQuestID = 94754,      zone = "Voidstorm", x = 41.26, y = 89.81 },
-        { name = "Rakshur the Bonegrinder",   npcID = 257027, questID = 93953, repQuestID = 94762,      zone = "Voidstorm", x = 46.38, y = 40.93 },
-        { name = "Hardin Steellock",          npcID = 257199, questID = 94461, faction    = "Horde",    zone = "Voidstorm", x = 28.47, y = 56.84 },
-        { name = "Gar'chak Skullcleave",      npcID = 257231, questID = 94461, faction    = "Alliance", zone = "Voidstorm", x = 69.68, y = 73.44 },
+        { name = "Sundereth the Caller",       npcID = 244272, questID = 90805, repQuestID = 94728, zone = "Voidstorm",          x = 29.51, y = 50.08 },
+        { name = "Territorial Voidscythe",     npcID = 238498, questID = 91050, repQuestID = 94729, zone = "Voidstorm",          x = 34.02, y = 82.18 },
+        { name = "Tremora",                    npcID = 241443, questID = 91048, repQuestID = 94730, zone = "Voidstorm",          x = 36.30, y = 83.73 },
+        { name = "Screammaxa the Matriarch",   npcID = 256922, questID = 93966, repQuestID = 94731, zone = "Voidstorm",          x = 43.68, y = 51.51 },
+        { name = "Bane of the Vilebloods",     npcID = 256923, questID = 93946, repQuestID = 94732, zone = "Voidstorm",          x = 47.05, y = 80.63 },
+        { name = "Aeonelle Blackstar",         npcID = 256924, questID = 93944, repQuestID = 94751, zone = "Voidstorm",          x = 39.24, y = 63.94 },
+        { name = "Lotus Darkblossom",          npcID = 256925, questID = 93947, repQuestID = 94758, zone = "Voidstorm",          x = 37.88, y = 71.78 },
+        { name = "Queen o' War",               npcID = 256926, questID = 93934, repQuestID = 94761, zone = "Voidstorm",          x = 55.72, y = 79.45 },
+        { name = "Ravengerus",                 npcID = 256808, questID = 93895, repQuestID = 94763, zone = "Voidstorm",          x = 48.81, y = 53.17 },
+        { name = "Bilemaw the Gluttonous",     npcID = 256770, questID = 93884, repQuestID = 94752, zone = "Voidstorm",          x = 35.48, y = 50.23 },
+        { name = "Nightbrood",                 npcID = 245044, questID = 91051, repQuestID = 94759, zone = "Voidstorm",          x = 40.15, y = 41.19 },
+        { name = "Far'thana the Mad",          npcID = 256821, questID = 93896, repQuestID = 94755, zone = "Voidstorm",          x = 53.94, y = 62.72 },
+        { name = "Voidseer Orivane",           npcID = 248791, questID = 94459, repQuestID = 94765, zone = "Voidstorm",          x = 30.06, y = 69.21 },
+        { name = "The Many-Broken",            npcID = 248459, questID = 94458, repQuestID = 94764, zone = "Voidstorm",          x = 28.82, y = 70.24 },
+        { name = "Abysslick",                  npcID = 248700, questID = 94462, repQuestID = 94750, zone = "Voidstorm",          x = 28.15, y = 65.93 },
+        { name = "Nullspiral",                 npcID = 248068, questID = 94460, repQuestID = 94760, zone = "Voidstorm",          x = 29.80, y = 67.87 },
+        { name = "Eruundi",                    npcID = 245182, questID = 91047, repQuestID = 94754, zone = "Voidstorm",          x = 41.26, y = 89.81, mapID = 2444 },
+        { name = "Rakshur the Bonegrinder",    npcID = 257027, questID = 93953, repQuestID = 94762, zone = "Voidstorm",          x = 46.38, y = 40.93, mapID = 2444 },
+        { name = "Hardin Steellock",           npcID = 257199, questID = 94461,                     zone = "Voidstorm",          x = 28.47, y = 56.84, mapID = 2444, faction = "Horde" },
+        { name = "Gar'chak Skullcleave",       npcID = 257231, questID = 94461,                     zone = "Voidstorm",          x = 69.68, y = 77.30, mapID = 2444, faction = "Alliance" },
 
         -- Zul'Aman
-        { name = "Necrohexxer Raz'ka",        npcID = 242023, questID = 89569, repQuestID = 94683,      zone = "Zul'Aman", x = 34.39, y = 33.04 },
-        { name = "The Snapping Scourge",      npcID = 242024, questID = 89570, repQuestID = 94697,      zone = "Zul'Aman", x = 51.88, y = 18.75 },
-        { name = "Skullcrusher Harak",        npcID = 242025, questID = 89571, repQuestID = 94698,      zone = "Zul'Aman", x = 51.84, y = 72.92 },
-        { name = "Elder Oaktalon",            npcID = 242026, questID = 89572, repQuestID = 94707,      zone = "Zul'Aman", x = 33.68, y = 88.97 },
-        { name = "Depthborn Eelamental",      npcID = 242027, questID = 89573, repQuestID = 94708,      zone = "Zul'Aman", x = 47.66, y = 20.52 },
-        { name = "Lightwood Borer",           npcID = 242028, questID = 89575, repQuestID = 94699,      zone = "Zul'Aman", x = 28.83, y = 24.50 },
-        { name = "Spinefrill",                npcID = 242031, questID = 89578, repQuestID = 94702,      zone = "Zul'Aman", x = 30.57, y = 44.56 },
-        { name = "Oophaga",                   npcID = 242032, questID = 89579, repQuestID = 94703,      zone = "Zul'Aman", x = 46.55, y = 51.27 },
-        { name = "Tiny Vermin",               npcID = 242033, questID = 89580, repQuestID = 94704,      zone = "Zul'Aman", x = 47.76, y = 34.35 },
-        { name = "Voidtouched Crustacean",    npcID = 242034, questID = 89581, repQuestID = 94705,      zone = "Zul'Aman", x = 21.54, y = 70.51 },
-        { name = "The Devouring Invader",     npcID = 242035, questID = 89583, repQuestID = 94706,      zone = "Zul'Aman", x = 39.59, y = 20.97 },
-        { name = "Mrrlokk",                   npcID = 245975, questID = 91174, repQuestID = 94700,      zone = "Zul'Aman", x = 50.86, y = 65.17 },
-        { name = "The Decaying Diamondback",  npcID = 245691, questID = 91072,                          zone = "Zul'Aman", x = 46.39, y = 43.39 },
-        { name = "Ash'an the Empowered",      npcID = 245692, questID = 91073,                          zone = "Zul'Aman", x = 45.28, y = 41.71 },
-        { name = "Poacher Rav'ik",            npcID = 247976, questID = 91634, repQuestID = 94701,      zone = "Zul'Aman", x = 82.97, y = 21.45 },
+        { name = "Necrohexxer Raz'ka",         npcID = 242023, questID = 89569, repQuestID = 94683, zone = "Zul'Aman",           x = 34.39, y = 33.04 },
+        { name = "The Snapping Scourge",       npcID = 242024, questID = 89570, repQuestID = 94697, zone = "Zul'Aman",           x = 51.88, y = 18.75 },
+        { name = "Skullcrusher Harak",         npcID = 242025, questID = 89571, repQuestID = 94698, zone = "Zul'Aman",           x = 51.84, y = 72.92 },
+        { name = "Elder Oaktalon",             npcID = 242026, questID = 89572, repQuestID = 94707, zone = "Zul'Aman",           x = 33.68, y = 88.97 },
+        { name = "Depthborn Eelamental",       npcID = 242027, questID = 89573, repQuestID = 94708, zone = "Zul'Aman",           x = 47.66, y = 20.52 },
+        { name = "Lightwood Borer",            npcID = 242028, questID = 89575, repQuestID = 94699, zone = "Zul'Aman",           x = 28.83, y = 24.50 },
+        { name = "Spinefrill",                 npcID = 242031, questID = 89578, repQuestID = 94702, zone = "Zul'Aman",           x = 30.57, y = 44.56 },
+        { name = "Oophaga",                    npcID = 242032, questID = 89579, repQuestID = 94703, zone = "Zul'Aman",           x = 46.55, y = 51.27 },
+        { name = "Tiny Vermin",                npcID = 242033, questID = 89580, repQuestID = 94704, zone = "Zul'Aman",           x = 47.76, y = 34.35 },
+        { name = "Voidtouched Crustacean",     npcID = 242034, questID = 89581, repQuestID = 94705, zone = "Zul'Aman",           x = 21.54, y = 70.51 },
+        { name = "The Devouring Invader",      npcID = 242035, questID = 89583, repQuestID = 94706, zone = "Zul'Aman",           x = 39.59, y = 20.97 },
+        { name = "Mrrlokk",                    npcID = 245975, questID = 91174, repQuestID = 94700, zone = "Zul'Aman",           x = 50.86, y = 65.17 },
+        { name = "The Decaying Diamondback",   npcID = 245691, questID = 91072, repQuestID = 94709, zone = "Zul'Aman",           x = 46.39, y = 43.39 },
+        { name = "Ash'an the Empowered",       npcID = 245692, questID = 91073, repQuestID = 94710, zone = "Zul'Aman",           x = 45.28, y = 41.71 },
+        { name = "Poacher Rav'ik",             npcID = 247976, questID = 91634, repQuestID = 94701, zone = "Zul'Aman",           x = 39.00, y = 50.01 },
 
         -- Eversong Woods
-        { name = "Warden of Weeds",           npcID = 246332, questID = 91280, repQuestID = 94681,      zone = "Eversong Woods", x = 52.62, y = 75.32 },
-        { name = "Harried Hawkstrider",       npcID = 246633, questID = 91315, repQuestID = 94682,      zone = "Eversong Woods", x = 45.09, y = 77.60 },
-        { name = "Overfester Hydra",          npcID = 240129, questID = 92392, repQuestID = 94684,      zone = "Eversong Woods", x = 54.71, y = 60.19 },
-        { name = "Bloated Snapdragon",        npcID = 250582, questID = 92366, repQuestID = 94685,      zone = "Eversong Woods", x = 36.56, y = 64.07 },
-        { name = "Cre'van",                   npcID = 250719, questID = 92391, repQuestID = 94686,      zone = "Eversong Woods", x = 62.96, y = 48.78 },
-        { name = "Coralfang",                 npcID = 250683, questID = 92389, repQuestID = 94687,      zone = "Eversong Woods", x = 36.33, y = 36.36 },
-        { name = "Lady Liminus",              npcID = 250754, questID = 92393, repQuestID = 94688,      zone = "Eversong Woods", x = 36.65, y = 77.19 },
-        { name = "Terrinor",                  npcID = 250876, questID = 92409, repQuestID = 94689,      zone = "Eversong Woods", x = 40.40, y = 85.32 },
-        { name = "Bad Zed",                   npcID = 250841, questID = 92404, repQuestID = 94690,      zone = "Eversong Woods", x = 49.04, y = 87.77 },
-        { name = "Waverly",                   npcID = 250780, questID = 92395, repQuestID = 94691,      zone = "Eversong Woods", x = 34.81, y = 20.98 },
-        { name = "Banuran",                   npcID = 250826, questID = 92403, repQuestID = 94692,      zone = "Eversong Woods", x = 56.42, y = 77.60 },
-        { name = "Lost Guardian",             npcID = 250806, questID = 92399, repQuestID = 94693,      zone = "Eversong Woods", x = 59.10, y = 79.24 },
-        { name = "Duskburn",                  npcID = 255302, questID = 93550, repQuestID = 94694,      zone = "Eversong Woods", x = 42.17, y = 68.97 },
-        { name = "Malfunctioning Construct",  npcID = 255329, questID = 93555, repQuestID = 94695,      zone = "Eversong Woods", x = 51.69, y = 46.01 },
-        { name = "Dame Bloodshed",            npcID = 255348, questID = 93561, repQuestID = 94696,      zone = "Eversong Woods", x = 44.57, y = 38.17 },
+        { name = "Warden of Weeds",            npcID = 246332, questID = 91280, repQuestID = 94681, zone = "Eversong Woods",     x = 51.39, y = 75.02 },
+        { name = "Harried Hawkstrider",        npcID = 246633, questID = 91315, repQuestID = 94682, zone = "Eversong Woods",     x = 44.76, y = 78.46 },
+        { name = "Overfester Hydra",           npcID = 240129, questID = 92392, repQuestID = 94684, zone = "Eversong Woods",     x = 54.71, y = 60.19 },
+        { name = "Bloated Snapdragon",         npcID = 250582, questID = 92366, repQuestID = 94685, zone = "Eversong Woods",     x = 36.56, y = 64.07 },
+        { name = "Cre'van",                    npcID = 250719, questID = 92391, repQuestID = 94686, zone = "Eversong Woods",     x = 62.96, y = 48.78 },
+        { name = "Coralfang",                  npcID = 250683, questID = 92389, repQuestID = 94687, zone = "Eversong Woods",     x = 36.33, y = 36.36 },
+        { name = "Lady Liminus",               npcID = 250754, questID = 92393, repQuestID = 94688, zone = "Eversong Woods",     x = 36.65, y = 77.19 },
+        { name = "Terrinor",                   npcID = 250876, questID = 92409, repQuestID = 94689, zone = "Eversong Woods",     x = 40.40, y = 85.32 },
+        { name = "Bad Zed",                    npcID = 250841, questID = 92404, repQuestID = 94690, zone = "Eversong Woods",     x = 49.04, y = 87.77 },
+        { name = "Waverly",                    npcID = 250780, questID = 92395, repQuestID = 94691, zone = "Eversong Woods",     x = 34.81, y = 20.98 },
+        { name = "Banuran",                    npcID = 250826, questID = 92403, repQuestID = 94692, zone = "Eversong Woods",     x = 56.42, y = 77.60 },
+        { name = "Lost Guardian",              npcID = 250806, questID = 92399, repQuestID = 94693, zone = "Eversong Woods",     x = 59.10, y = 79.24 },
+        { name = "Duskburn",                   npcID = 255302, questID = 93550, repQuestID = 94694, zone = "Eversong Woods",     x = 42.17, y = 68.97 },
+        { name = "Malfunctioning Construct",   npcID = 255329, questID = 93555, repQuestID = 94695, zone = "Eversong Woods",     x = 51.69, y = 46.01 },
+        { name = "Dame Bloodshed",             npcID = 255348, questID = 93561, repQuestID = 94696, zone = "Eversong Woods",     x = 45.87, y = 39.04 },
 
         -- Isle of Quel'Danas
-        { name = "Tarhu the Ransacker",       npcID = 252465, questID = 95011,                          zone = "Isle of Quel'Danas", x = 55.71, y = 29.13 },
-        { name = "Dripping Shadow",           npcID = 239864, questID = 95010,                          zone = "Isle of Quel'Danas", x = 37.09, y = 38.30 },
+        { name = "Tarhu the Ransacker",        npcID = 252465, questID = 95011,                     zone = "Isle of Quel'Danas", x = 55.71, y = 29.13 },
+        { name = "Dripping Shadow",            npcID = 239864, questID = 95010,                     zone = "Isle of Quel'Danas", x = 37.09, y = 38.30 },
+
+        -- The Coiled Isle
+        { name = "Big Mon",                    npcID = 256631, questID = 93829, repQuestID = 98353, zone = "The Coiled Isle",    x = 70.03, y = 63.44 },
+        { name = "Coin-Eye Skully",            npcID = 257906, questID = 94619, repQuestID = 98352, zone = "The Coiled Isle",    x = 57.32, y = 66.10 },
+        { name = "Garsecg",                    npcID = 258916, questID = 94856, repQuestID = 98350, zone = "The Coiled Isle",    x = 69.51, y = 44.83 },
+        { name = "Nar'zira",                   npcID = 258920, questID = 94860, repQuestID = 98351, zone = "The Coiled Isle",    x = 52.36, y = 43.08 },
+        { name = "Sss'alik, The Rotten Claw",  npcID = 261109, questID = 95447, repQuestID = 98354, zone = "The Coiled Isle",    x = 57.33, y = 40.45 },
+        { name = "Destra",                     npcID = 261142, questID = 95452, repQuestID = 98355, zone = "The Coiled Isle",    x = 52.05, y = 32.29 },
+        { name = "Lockjaw the Snapper",        npcID = 265237, questID = 96456, repQuestID = 98347, zone = "The Coiled Isle",    x = 31.64, y = 56.77 },
+        { name = "Hisstara the Raiser",        npcID = 265262, questID = 96464, repQuestID = 98348, zone = "The Coiled Isle",    x = 43.85, y = 50.86 },
+        { name = "Farthik the Plunderer",      npcID = 264854, questID = 96491, repQuestID = 98344, zone = "The Coiled Isle",    x = 53.77, y = 72.03 },
+        { name = "Siltmouth, the Unflappable", npcID = 268049, questID = 97112, repQuestID = 98345, zone = "The Coiled Isle",    x = 50.00, y = 69.07 },
+        { name = "Kari'zah the Forgotten",     npcID = 268090, questID = 97122, repQuestID = 98346, zone = "The Coiled Isle",    x = 24.89, y = 73.54 },
+
+        -- Vaults of Atal'Utek
+        { name = "Szarith the Fanged",         npcID = 263456, questID = 96030, repQuestID = 98349, zone = "The Coiled Isle",    x = 47.30, y = 6.40,  mapID = 2509 },
     }
 
     addon.raresDB = addon.raresDB or {}
@@ -282,16 +318,20 @@ addon:RegisterDatabaseInit("midnight", function()
 
     -- Delves Database
     local midnightDelves = {
-        { name = "Collegiate Calamity", delveID = 8426, zone = "Silvermoon City", x = 40.76, y = 54.06 },
-        { name = "The Darkway", delveID = 8440, zone = "Silvermoon City", x = 39.30, y = 32.10 },
-        { name = "The Shadow Enclave", delveID = 8438, zone = "Eversong Woods", x = 45.40, y = 86.00 },
-        { name = "Parhelion Plaza", delveID = 8428, zone = "Isle of Quel'Danas", x = 47.74, y = 41.58 },
-        { name = "Atal'Aman", delveID = 8444, zone = "Zul'Aman", x = 24.80, y = 53.00 },
-        { name = "Twilight Crypts", delveID = 8442, zone = "Zul'Aman", x = 25.40, y = 84.30 },
-        { name = "The Grudge Pit", delveID = 8434, zone = "Harandar", x = 70.50, y = 64.90 },
-        { name = "The Gulf of Memory", delveID = 8436, zone = "Harandar", x = 36.30, y = 49.20 },
-        { name = "Shadowguard Point", delveID = 8432, zone = "Voidstorm", x = 37.38, y = 47.70 },
-        { name = "Sunkiller Sanctum", delveID = 8430, zone = "Voidstorm", x = 54.80, y = 47.00 },
+        { name = "Collegiate Calamity", delveID = 8426, zone = "Silvermoon City",    x = 40.76, y = 54.06 },
+        { name = "The Darkway",         delveID = 8440, zone = "Silvermoon City",    x = 39.30, y = 32.10 },
+        { name = "The Shadow Enclave",  delveID = 8438, zone = "Eversong Woods",     x = 45.40, y = 86.00 },
+        { name = "Parhelion Plaza",     delveID = 8428, zone = "Isle of Quel'Danas", x = 47.74, y = 41.58 },
+        { name = "Atal'Aman",           delveID = 8444, zone = "Zul'Aman",           x = 24.80, y = 53.00 },
+        { name = "Twilight Crypts",     delveID = 8442, zone = "Zul'Aman",           x = 25.40, y = 84.30 },
+        { name = "The Grudge Pit",      delveID = 8434, zone = "Harandar",           x = 70.50, y = 64.90 },
+        { name = "The Gulf of Memory",  delveID = 8436, zone = "Harandar",           x = 36.30, y = 49.20 },
+        { name = "Shadowguard Point",   delveID = 8432, zone = "Voidstorm",          x = 37.38, y = 47.70 },
+        { name = "Sunkiller Sanctum",   delveID = 8430, zone = "Voidstorm",          x = 54.80, y = 47.00 },
+        -- 12.1
+        { name = "Gnarldor Isle",       delveID = 8760, zone = "The Coiled Isle",    x = 64.54, y = 77.58 },
+        { name = "The Ring of Glory",   delveID = 8763, zone = "The Coiled Isle",    x = 71.35, y = 56.54 },
+        { name = "Venomfall Deeps",     delveID = 8779, zone = "The Coiled Isle",    x = 51.23, y = 30.36 },
     }
     addon.delvesDB = addon.delvesDB or {}
     for _, v in ipairs(midnightDelves) do
@@ -301,23 +341,30 @@ addon:RegisterDatabaseInit("midnight", function()
     -- Currencies
     local midnightCurrencies = {
         -- General
-        { name = "Voidlight Marl", id = 3316, icon = 7137586 },
-        { name = "Remnant of Anguish", id = 3392, icon = 4554435 },
-        { name = "Radiant Spark Dust", id = 3212, icon = 5929578 },
-        { name = "Dawnlight Manaflux", id = 3378, icon = 4622294 },
-        { name = "Untainted Mana-Crystals", id = 3356, icon = 132849 },
+        { name = "Voidlight Marl",          id = 3316,   icon = 7137586 },
+        { name = "Remnant of Anguish",      id = 3392,   icon = 4554435 },
+        { name = "Tidal Spark Dust",        id = 3509,   icon = 5929576 },
+        { name = "Venomblight Manaflux",    id = 3465,   icon = 4622293 },
+        { name = "Nebulous Voidcore",       id = 3418,   icon = 7658129 },
+        { name = "Untainted Mana-Crystals", id = 3356,   icon = 132849 },
 
         -- Eversong Wood
-        { name = "Brimming Arcana", id = 3379, icon = 132849 },
+        { name = "Brimming Arcana",         id = 3379,   icon = 132849 },
 
         -- Zul'Aman
-        { name = "Shard of Dundun", id = 3376, icon = 134569 },
-        { name = "Unalloyed Abundance", id = 3377, icon = 5041790 },
-        { name = "Vile Essence", id = 259361, icon = 132871, max = 1000, isItem = true },
-        
+        { name = "Shard of Dundun",         id = 3376,   icon = 134569 },
+        { name = "Unalloyed Abundance",     id = 3377,   icon = 5041790 },
+        { name = "Vile Essence",            id = 259361, icon = 132871,  max = 1000, isItem = true },
+
         -- Harandar
-        { name = "Luminous Dust", id = 3385, icon = 133852 },
-        { name = "Mysterious Skyshards", id = 255826, icon = 429385, max = 500, isItem = true },
+        { name = "Luminous Dust",           id = 3385,   icon = 133852 },
+        { name = "Mysterious Skyshards",    id = 255826, icon = 429385,  max = 500,  isItem = true },
+
+        -- The Coiled Isle
+        { name = "Corrosive Coin",          id = 3448,   icon = 8032876 },
+        { name = "Coiled Filament",         id = 3546,   icon = 7551416 },
+        { name = "Ossified Relic",          id = 274422, icon = 8097232, max = 999,  isItem = true },
+        { name = "Corrosive Soul",          id = 273000, icon = 5764924, max = 99,   isItem = true },
     }
     addon.currencyDB = addon.currencyDB or {}
     for _, v in ipairs(midnightCurrencies) do
@@ -327,16 +374,19 @@ addon:RegisterDatabaseInit("midnight", function()
 
     -- Reputations
     local midnightReputations = {
-        { name = "Silvermoon Court", id = 2710, category = "quelthalas", order = 1 },
-        { name = "Magisters", id = 2711, category = "quelthalas", order = 1.1 },
-        { name = "Blood Knights", id = 2712, category = "quelthalas", order = 1.2 },
-        { name = "Farstriders", id = 2713, category = "quelthalas", order = 1.3 },
-        { name = "Shades of the Row", id = 2714, category = "quelthalas", order = 1.4 },
-        { name = "The Amani Tribe", id = 2696, category = "zulaman", order = 2 },
-        { name = "Hara'ti", id = 2704, category = "harandar", order = 3 },
-        { name = "The Singularity", id = 2699, category = "voidstorm", order = 4 },
-        { name = "Slayer's Duellum", id = 2770, category = "voidstorm", order = 4.1 },
-        { name = "Valeera Sanguinar", id = 2744, category = "delves", order = 5 },
+        { name = "Silvermoon Court",   id = 2710, category = "quelthalas", order = 1 },
+        { name = "Magisters",          id = 2711, category = "quelthalas", order = 1.1 },
+        { name = "Blood Knights",      id = 2712, category = "quelthalas", order = 1.2 },
+        { name = "Farstriders",        id = 2713, category = "quelthalas", order = 1.3 },
+        { name = "Shades of the Row",  id = 2714, category = "quelthalas", order = 1.4 },
+        { name = "The Amani Tribe",    id = 2696, category = "zulaman",    order = 2 },
+        { name = "Hara'ti",            id = 2704, category = "harandar",   order = 3 },
+        { name = "The Singularity",    id = 2699, category = "voidstorm",  order = 4 },
+        { name = "Slayer's Duellum",   id = 2770, category = "voidstorm",  order = 4.1 },
+        { name = "Ritual Sites",       id = 2792, category = "quelthalas", order = 5 },
+        { name = "Zul'jarra's Forces", id = 2772, category = "coiledisle", order = 6 },
+        { name = "Captain Tokka",      id = 2773, category = "coiledisle", order = 6.1 },
+        { name = "Valeera Sanguinar",  id = 2744, category = "delves",     order = 7 },
     }
     addon.reputationDB = addon.reputationDB or {}
     for _, v in ipairs(midnightReputations) do
@@ -348,6 +398,7 @@ addon:RegisterDatabaseInit("midnight", function()
     addon.reputationParentMap = addon.reputationParentMap or {}
     addon.reputationParentMap[2710] = {2711, 2712, 2713, 2714} -- Silvermoon Court -> Magisters, Blood Knights, Farstriders, Shades of the Row  
     addon.reputationParentMap[2699] = {2770} -- The Singularity -> Slayer's Duellum
+    addon.reputationParentMap[2772] = {2773} -- Zul'jarra's Forces -> Captain Tokka
 
     addon.reputationSortOrder = addon.reputationSortOrder or {}
     for _, v in ipairs(midnightReputations) do

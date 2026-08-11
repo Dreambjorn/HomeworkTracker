@@ -16,8 +16,8 @@ addon:RegisterDatabaseInit("general", function()
     -- Add season progress trackers
     addon.progressDB = addon.progressDB or {}
     local generalProgress = {
-        { name = "Delves: Season 1", id = 2742, category = "seasonProgress", order = 1 },
-        { name = "Prey: Season 1", id = 2764, category = "seasonProgress", order = 2 },
+        { name = "Delves: Season 2", id = 2796, category = "seasonProgress", order = 1 },
+        { name = "Prey: Season 2", id = 2808, category = "seasonProgress", order = 2 },
     }
     for _, v in ipairs(generalProgress) do
         table.insert(addon.progressDB, v)
@@ -25,14 +25,14 @@ addon:RegisterDatabaseInit("general", function()
 
     -- Add crest currencies
     addon.crestDB = addon.crestDB or {}
-    local dawnCrests = {
-        { name = "Adventurer Dawncrest", id = 3383, icon = 7639517, cap = 120 },
-        { name = "Veteran Dawncrest",    id = 3341, icon = 7639525, cap = 120 },
-        { name = "Champion Dawncrest",   id = 3343, icon = 7639519, cap = 120 },
-        { name = "Hero Dawncrest",       id = 3345, icon = 7639521, cap = 120 },
-        { name = "Myth Dawncrest",       id = 3347, icon = 7639523, cap = 120 },
+    local mistCrests = {
+        { name = "Adventurer Mistcrest", id = 3442, icon = 7734054, cap = 100 },
+        { name = "Veteran Mistcrest",    id = 3443, icon = 7734062, cap = 100 },
+        { name = "Champion Mistcrest",   id = 3444, icon = 7734056, cap = 100 },
+        { name = "Hero Mistcrest",       id = 3445, icon = 7734058, cap = 100 },
+        { name = "Myth Mistcrest",       id = 3446, icon = 7734060, cap = 100 },
     }
-    for _, v in ipairs(dawnCrests) do table.insert(addon.crestDB, v) end
+    for _, v in ipairs(mistCrests) do table.insert(addon.crestDB, v) end
 
     -- Initialize default database settings
     if addon.defaults then

@@ -197,23 +197,45 @@ addon:RegisterDatabaseInit("theWarWithin", function()
     
     -- Weekly Quests
     local twwWeekly = {
-        { name = "Reduce, Reuse, Resell", questID = {85879}, questType = "simple", isWeekend = false, category = "undermine" },
-        { name = "The Main Event", questID = {85088}, questType = "simple", isWeekend = false, category = "undermine" },
-        { name = "Urge to Surge", questID = {86775}, questType = "simple", isWeekend = false, category = "undermine" },
-        { name = "Many Jobs, Handle It!", questID = {85869}, questType = "simple", isWeekend = false, category = "undermine" },
-        { name = "Adventurer's Cache", questID = {84736, 84737, 84738, 84739}, questType = "multiple", isWeekend = false, category = "general" },
-        { name = "Awaken the Machine", questID = {83333}, questType = "simple", isWeekend = false, category = "deeps" },
-        { name = "Hallowfall Fishing Derby", questID = {83529, 83530, 83531, 83532, 82778}, questType = "single", isWeekend = true, category = "hallowfall" },
-        { name = "Rollin' Down in the Deeps", questID = {82946}, questType = "simple", isWeekend = false, category = "deeps" },
-        { name = "Spreading The Light", questID = {76586}, questType = "simple", isWeekend = false, category = "hallowfall" },
-        { name = "Underworld Operative", questID = {80670, 80671, 80672}, questType = "single", isWeekend = false, category = "azjkahet" },
-        { name = "Weekly Dungeon", questID = {83465, 83436, 83469, 83443, 83458, 83459, 83432, 83457, 86203}, questType = "single", isWeekend = false, category = "general" },
-        { name = "World Boss", questID = {82653, 81653, 81630, 81624}, questType = "single", isWeekend = false, category = "general", 
-          bossNames = {[82653] = "Aggregation of Horrors", [81653] = "Shurrai", [81630] = "Kordac", [81624] = "Orta"} },
-        { name = "Reshanor, the Untethered", questID = {87354}, questType = "simple", isWeekend = false, category = "karesh" },
-        { name = "World Soul", questID = {82511,82453,82516,82458,82482,82483,82512,82452,82491,82494,82502,82485,82495,82503,82492,82496,82504,82488,82498,82506,82490,82499,82507,82489,82493,82501,82486,82500,82508,82487,82497,82505,82509,82659,82510,87417,87419,87422,87423,87424,89514,91855}, questType = "single", isWeekend = false, category = "general" },
-        { name = "More Than Just a Phase", questID = {91093}, questType = "simple", isWeekend = false, category = "karesh" },
-        { name = "Ecological Succession", questID = {85460}, questType = "simple", isWeekend = false, category = "karesh" },
+        { name = "Reduce, Reuse, Resell",     questID = {85879},                             questType = "simple",   isWeekend = false, category = "undermine" },
+        { name = "The Main Event",            questID = {85088},                             questType = "simple",   isWeekend = false, category = "undermine" },
+        { name = "Urge to Surge",             questID = {86775},                             questType = "simple",   isWeekend = false, category = "undermine" },
+        { name = "Many Jobs, Handle It!",     questID = {85869},                             questType = "simple",   isWeekend = false, category = "undermine" },
+        { name = "Adventurer's Cache",        questID = {84736, 84737, 84738, 84739},        questType = "multiple", isWeekend = false, category = "general" },
+        { name = "Awaken the Machine",        questID = {83333},                             questType = "simple",   isWeekend = false, category = "deeps" },
+        { name = "Hallowfall Fishing Derby",  questID = {83529, 83530, 83531, 83532, 82778}, questType = "single",   isWeekend = true,  category = "hallowfall" },
+        { name = "Rollin' Down in the Deeps", questID = {82946},                             questType = "simple",   isWeekend = false, category = "deeps" },
+        { name = "Spreading The Light",       questID = {76586},                             questType = "simple",   isWeekend = false, category = "hallowfall" },
+        { name = "Underworld Operative",      questID = {80670, 80671, 80672},               questType = "single",   isWeekend = false, category = "azjkahet" },
+        { name = "Weekly Dungeon",
+            questType = "single", isWeekend = false, category = "general",
+            questID = {
+                83465, 83436, 83469, 83443, 83458, 83459, 83432, 83457, 86203,
+            },
+        },
+        { name = "World Boss",
+            questType = "single", isWeekend = false, category = "general",
+            questID = { 82653, 81653, 81630, 81624 },
+            bossNames = {
+                [82653] = "Aggregation of Horrors",
+                [81653] = "Shurrai",
+                [81630] = "Kordac",
+                [81624] = "Orta",
+            },
+        },
+        { name = "Reshanor, the Untethered",  questID = {87354},                             questType = "simple",   isWeekend = false, category = "karesh" },
+        { name = "World Soul",
+            questType = "single", isWeekend = false, category = "general",
+            questID = {
+                82511, 82453, 82516, 82458, 82482, 82483, 82512, 82452, 82491, 82494,
+                82502, 82485, 82495, 82503, 82492, 82496, 82504, 82488, 82498, 82506,
+                82490, 82499, 82507, 82489, 82493, 82501, 82486, 82500, 82508, 82487,
+                82497, 82505, 82509, 82659, 82510, 87417, 87419, 87422, 87423, 87424,
+                89514, 91855,
+            },
+        },
+        { name = "More Than Just a Phase",    questID = {91093},                             questType = "simple",   isWeekend = false, category = "karesh" },
+        { name = "Ecological Succession",     questID = {85460},                             questType = "simple",   isWeekend = false, category = "karesh" },
     }
     
     addon.weeklyDB = addon.weeklyDB or {}
@@ -336,21 +358,21 @@ addon:RegisterDatabaseInit("theWarWithin", function()
     
     -- Delves Database
     local twwDelves = {
-        { name = "Earthcrawl Mines", delveID = 7787, zone = "Isle of Dorn", x = 38.6, y = 74 },
-        { name = "Fungal Folly", delveID = 7779, zone = "Isle of Dorn", x = 52.03, y = 65.77 },
-        { name = "Kriegval's Rest", delveID = 7781, zone = "Isle of Dorn", x = 62.19, y = 42.7 },
+        { name = "Earthcrawl Mines",  delveID = 7787, zone = "Isle of Dorn",  x = 38.6,  y = 74 },
+        { name = "Fungal Folly",      delveID = 7779, zone = "Isle of Dorn",  x = 52.03, y = 65.77 },
+        { name = "Kriegval's Rest",   delveID = 7781, zone = "Isle of Dorn",  x = 62.19, y = 42.7 },
         { name = "Excavation Site 9", delveID = 8181, zone = "Ringing Deeps", x = 76.25, y = 95.85 },
-        { name = "The Dread Pit", delveID = 7788, zone = "Ringing Deeps", x = 74.2, y = 37.3 },
-        { name = "The Waterworks", delveID = 7782, zone = "Ringing Deeps", x = 46.42, y = 48.71 },
-        { name = "Mycomancer Cavern", delveID = 7780, zone = "Hallowfall", x = 71.3, y = 31.2 },
-        { name = "Nightfall Sanctum", delveID = 7785, zone = "Hallowfall", x = 34.32, y = 47.43 },
-        { name = "Skittering Breach", delveID = 7789, zone = "Hallowfall", x = 65.48, y = 61.74 },
-        { name = "The Sinkhole", delveID = 7783, zone = "Hallowfall", x = 50.6, y = 53.3 },
-        { name = "Tak-Rethan Abyss", delveID = 7784, zone = "Azj-Kahet", x = 55, y = 73.92 },
-        { name = "The Spiral Weave", delveID = 7790, zone = "Azj-Kahet", x = 45, y = 19 },
-        { name = "The Underkeep", delveID = 7786, zone = "Azj-Kahet", x = 51.85, y = 88.3 },
-        { name = "Sidestreet Sluice", delveID = 8246, zone = "Undermine", x = 34.95, y = 53.14 },
-        { name = "Archival Assault", delveID = 8273, zone = "K'aresh", x = 55.1, y = 48.07 },
+        { name = "The Dread Pit",     delveID = 7788, zone = "Ringing Deeps", x = 74.2,  y = 37.3 },
+        { name = "The Waterworks",    delveID = 7782, zone = "Ringing Deeps", x = 46.42, y = 48.71 },
+        { name = "Mycomancer Cavern", delveID = 7780, zone = "Hallowfall",    x = 71.3,  y = 31.2 },
+        { name = "Nightfall Sanctum", delveID = 7785, zone = "Hallowfall",    x = 34.32, y = 47.43 },
+        { name = "Skittering Breach", delveID = 7789, zone = "Hallowfall",    x = 65.48, y = 61.74 },
+        { name = "The Sinkhole",      delveID = 7783, zone = "Hallowfall",    x = 50.6,  y = 53.3 },
+        { name = "Tak-Rethan Abyss",  delveID = 7784, zone = "Azj-Kahet",     x = 55,    y = 73.92 },
+        { name = "The Spiral Weave",  delveID = 7790, zone = "Azj-Kahet",     x = 45,    y = 19 },
+        { name = "The Underkeep",     delveID = 7786, zone = "Azj-Kahet",     x = 51.85, y = 88.3 },
+        { name = "Sidestreet Sluice", delveID = 8246, zone = "Undermine",     x = 34.95, y = 53.14 },
+        { name = "Archival Assault",  delveID = 8273, zone = "K'aresh",       x = 55.1,  y = 48.07 },
     }
 
     addon.delvesDB = addon.delvesDB or {}
@@ -361,21 +383,21 @@ addon:RegisterDatabaseInit("theWarWithin", function()
     -- Currencies
     local twwCurrencies = {
         -- General
-        { name = "Resonance Crystals", id = 2815, icon = 2967113 },
+        { name = "Resonance Crystals",  id = 2815, icon = 2967113 },
 
         -- Hallowfall
         { name = "Mereldar Derby Mark", id = 3055, icon = 6012052 },
 
         -- Azj-Kahet
-        { name = "Kej", id = 3056, icon = 4549280 },
-        { name = "Nerub-ar Finery", id = 3093, icon = 6012085 },
+        { name = "Kej",                 id = 3056, icon = 4549280 },
+        { name = "Nerub-ar Finery",     id = 3093, icon = 6012085 },
 
         -- Undermine
-        { name = "Market Research", id = 3226, icon = 1505953 },
+        { name = "Market Research",     id = 3226, icon = 1505953 },
 
         -- K'aresh
-        { name = "Untethered Coin", id = 3303, icon = 133791 },
-        { name = "Ethereal Strands", id = 3278, icon = 5931153 },
+        { name = "Untethered Coin",     id = 3303, icon = 133791 },
+        { name = "Ethereal Strands",    id = 3278, icon = 5931153 },
     }
 
     addon.currencyDB = addon.currencyDB or {}
@@ -386,24 +408,24 @@ addon:RegisterDatabaseInit("theWarWithin", function()
     
     -- Reputations
     local twwReputations = {
-        { name = "Council of Dornogal", id = 2590, category = "dornogal", order = 1 },
-        { name = "Assembly of the Deeps", id = 2594, category = "deeps", order = 2 },
-        { name = "Hallowfall Arathi", id = 2570, category = "hallowfall", order = 3 },
-        { name = "Flame's Radiance", id = 2688, category = "hallowfall", order = 3.1 },
-        { name = "The Severed Threads", id = 2600, category = "azjkahet", order = 4 },
-        { name = "The General", id = 2605, category = "azjkahet", order = 4.1 },
-        { name = "The Vizier", id = 2607, category = "azjkahet", order = 4.2 },
-        { name = "The Weaver", id = 2601, category = "azjkahet", order = 4.3 },
-        { name = "The Cartels of Undermine", id = 2653, category = "undermine", order = 5 },
-        { name = "Gallagio Loyalty Rewards Club", id = 2685, category = "undermine", order = 5.1 },
-        { name = "Bilgewater Cartel", id = 2673, category = "undermine", order = 5.2 },
-        { name = "Blackwater Cartel", id = 2675, category = "undermine", order = 5.3 },
-        { name = "Darkfuse Solutions", id = 2669, category = "undermine", order = 5.4 },
-        { name = "Steamwheedle Cartel", id = 2677, category = "undermine", order = 5.5 },
-        { name = "Venture Company", id = 2671, category = "undermine", order = 5.6 },
-        { name = "The K'aresh Trust", id = 2658, category = "karesh", order = 6 },
-        { name = "Manaforge Vandals", id = 2736, category = "karesh", order = 6.1 },
-        { name = "Brann Bronzebeard", id = 2640, category = "delves", order = 99 },
+        { name = "Council of Dornogal",           id = 2590, category = "dornogal",   order = 1 },
+        { name = "Assembly of the Deeps",         id = 2594, category = "deeps",      order = 2 },
+        { name = "Hallowfall Arathi",             id = 2570, category = "hallowfall", order = 3 },
+        { name = "Flame's Radiance",              id = 2688, category = "hallowfall", order = 3.1 },
+        { name = "The Severed Threads",           id = 2600, category = "azjkahet",   order = 4 },
+        { name = "The General",                   id = 2605, category = "azjkahet",   order = 4.1 },
+        { name = "The Vizier",                    id = 2607, category = "azjkahet",   order = 4.2 },
+        { name = "The Weaver",                    id = 2601, category = "azjkahet",   order = 4.3 },
+        { name = "The Cartels of Undermine",      id = 2653, category = "undermine",  order = 5 },
+        { name = "Gallagio Loyalty Rewards Club", id = 2685, category = "undermine",  order = 5.1 },
+        { name = "Bilgewater Cartel",             id = 2673, category = "undermine",  order = 5.2 },
+        { name = "Blackwater Cartel",             id = 2675, category = "undermine",  order = 5.3 },
+        { name = "Darkfuse Solutions",            id = 2669, category = "undermine",  order = 5.4 },
+        { name = "Steamwheedle Cartel",           id = 2677, category = "undermine",  order = 5.5 },
+        { name = "Venture Company",               id = 2671, category = "undermine",  order = 5.6 },
+        { name = "The K'aresh Trust",             id = 2658, category = "karesh",     order = 6 },
+        { name = "Manaforge Vandals",             id = 2736, category = "karesh",     order = 6.1 },
+        { name = "Brann Bronzebeard",             id = 2640, category = "delves",     order = 99 },
     }
 
     addon.reputationDB = addon.reputationDB or {}
