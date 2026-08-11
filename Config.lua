@@ -14,7 +14,6 @@ local DEFAULT_SORT_PRIORITY = 99
 local SMALL_GAP = 16
 local BIG_GAP = 50
 
-
 -- UI colors
 local COLOR_BG = {0.1, 0.1, 0.1, 0.95}
 local COLOR_Sidebar = {0.15, 0.15, 0.15, 1}
@@ -1253,7 +1252,6 @@ local function BuildTab_General(parent)
         for k, v in pairs(addon.defaults.expansions) do HomeworkTrackerDB.expansions[k] = v end
         HomeworkTrackerDB.ui = HomeworkTrackerDB.ui or {}
         HomeworkTrackerDB.ui.selectedExpansion = (addon.defaults.ui and addon.defaults.ui.selectedExpansion) or GetSelectedExpansion()
-
         HomeworkTrackerDB.activities.activityEnable = addon.defaults.activities.activityEnable
         HomeworkTrackerDB.delves.enable = addon.defaults.delves.enable
         HomeworkTrackerDB.greatVault.enable = addon.defaults.greatVault.enable
@@ -1512,7 +1510,6 @@ local function BuildTab_Appearance(parent)
     HomeworkTrackerDB.colors = HomeworkTrackerDB.colors or {}
     local colors = HomeworkTrackerDB.colors
 
-
     local fText = CreateFrame("Frame", nil, parent)
     fText:SetSize(200, 20)
     fText:SetPoint("TOPLEFT", 15, y)
@@ -1522,7 +1519,6 @@ local function BuildTab_Appearance(parent)
     hText:SetText("Text")
     hText:SetTextColor(0.8, 0.8, 0.5)
     y = y - SMALL_GAP - 9
-
 
     colors.textLeft = colors.textLeft or {1,1,1}
     colors.textRight = colors.textRight or {1,1,1}
@@ -1543,12 +1539,10 @@ local function BuildTab_Appearance(parent)
     cpHdr:SetPoint("TOPLEFT", 30, y)
     y = y - SMALL_GAP - 14
 
-
     local hasEnabledExpansion = false
     for _k, _v in pairs(HomeworkTrackerDB.expansions or {}) do
         if _v then hasEnabledExpansion = true; break end
     end
-
 
     local fGeneral = CreateFrame("Frame", nil, parent)
     fGeneral:SetSize(200, 20)
@@ -1560,7 +1554,6 @@ local function BuildTab_Appearance(parent)
     hGeneral:SetText("General")
     hGeneral:SetTextColor(0.8, 0.8, 0.5)
     y = y - SMALL_GAP - 9
-
 
     local singleColors = {
         { "Bountiful Delves",    "delves",         unpack(addon.defaultColors.delves) },
@@ -1642,7 +1635,44 @@ local function BuildTab_Appearance(parent)
             end
             y = y - SMALL_GAP + 6
         end
-        
+
+        -- Reputations with their own color; the rest inherit their zone's color
+        colors.reputations = colors.reputations or {}
+
+        local standaloneReps = {}
+        for _, rep in ipairs(addon.reputationDB or {}) do
+            if rep.id and addon.defaultColors and addon.defaultColors.reputations and addon.defaultColors.reputations[rep.id] then
+                if not rep.expansion or rep.expansion == selectedExpansion then
+                    table.insert(standaloneReps, { name = rep.name, key = rep.id, order = rep.order or 99 })
+                end
+            end
+        end
+        table.sort(standaloneReps, function(a, b)
+            if a.order ~= b.order then return a.order < b.order end
+            return a.name < b.name
+        end)
+
+        if #standaloneReps > 0 then
+            local fReps = CreateFrame("Frame", nil, parent)
+            fReps:SetSize(200, 20)
+            fReps:SetPoint("TOPLEFT", 15, y)
+
+            local hReps = fReps:CreateFontString(nil, "OVERLAY")
+            hReps:SetPoint("LEFT", 0, 0)
+            SetConfigFont(hReps, 12)
+            hReps:SetText("Reputations")
+            hReps:SetTextColor(0.8, 0.8, 0.5)
+            y = y - SMALL_GAP - 9
+
+            for _, rep in ipairs(standaloneReps) do
+                local defR, defG, defB = unpack(addon.defaultColors.reputations[rep.key])
+                local cp = CreateColorPicker(parent, rep.name, colors.reputations, rep.key, defR, defG, defB)
+                cp:SetPoint("TOPLEFT", 30, y)
+                y = y - SMALL_GAP - 14
+            end
+            y = y - SMALL_GAP + 6
+        end
+
 
         local fRares = CreateFrame("Frame", nil, parent)
         fRares:SetSize(200, 20)
@@ -1957,7 +1987,6 @@ local function BuildTab_Appearance(parent)
 
 end
 
-
 -- Build activities tab
 local function BuildTab_Activities(parent)
     local y = -10
@@ -1965,7 +1994,6 @@ local function BuildTab_Activities(parent)
     h2:SetPoint("TOPLEFT", 10, y)
     y = y - BIG_GAP + 10
     
-
     local selectedExpansion = GetSelectedExpansion()
     local hasEnabledExpansion = (selectedExpansion ~= nil)
 
@@ -2011,7 +2039,6 @@ local function BuildTab_Activities(parent)
 
         y = y - SMALL_GAP - 14
     end
-
 
     if hasEnabledExpansion then
         y = y + SMALL_GAP
@@ -2119,14 +2146,12 @@ local function BuildTab_Weekly(parent)
                 return cat:gsub("^%l", string.upper)
             end
 
-
             local zones = {}
             for _, act in ipairs(filteredWeekly) do
                 local zn = act.category or "general"
                 zones[zn] = zones[zn] or {}
                 table.insert(zones[zn], act)
             end
-
 
             local zoneNames = {}
             for zn in pairs(zones) do table.insert(zoneNames, zn) end
@@ -2202,7 +2227,6 @@ local function BuildTab_Weekly(parent)
         addon:UpdateDisplay()
     end)
 end
-
 
 -- Build currencies tab
 local function BuildTab_Currencies(parent)

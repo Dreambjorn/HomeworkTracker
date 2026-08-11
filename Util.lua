@@ -604,12 +604,13 @@ function addon:GetWeeklyQuestInfo()
                     append(quest.questID.hard)
                     append(quest.questID.nightmare)
 
+                    local perDifficultyCap = (type(quest.max) == "number") and quest.max or 4
                     local function count(list)
                         if type(list) ~= "table" then return 0 end
                         local c = 0
                         for _, qid in ipairs(list) do
                             if self:IsQuestComplete(qid) then c = c + 1 end
-                            if c >= 4 then break end
+                            if c >= perDifficultyCap then break end
                         end
                         return c
                     end
@@ -707,6 +708,7 @@ function addon:GetWeeklyQuestInfo()
                 required = quest.questType == "multiple" and #questIDs or 1,
                 category = quest.category,
                 handler = quest.handler,
+                max = quest.max,
                 preyCounts = preyCounts,
                 preyQuestIDs = preyQuestIDs,
             })
@@ -767,6 +769,7 @@ function addon:GetRareInfo(currentZone)
                 questID = rare.questID,
                 repQuestID = rare.repQuestID,
                 zone = rare.zone,
+                mapID = rare.mapID,
                 faction = rare.faction,
                 x = rare.x,
                 y = rare.y,

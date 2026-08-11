@@ -1,0 +1,12 @@
+# Normalise line endings so contributors on other platforms don't churn whole files
+* text=auto
+
+*.lua   text eol=crlf
+*.toc   text eol=crlf
+*.xml   text eol=crlf
+*.md    text eol=lf
+
+*.tga   binary
+*.blp   binary
+*.ttf   binary
+*.ogg   binary

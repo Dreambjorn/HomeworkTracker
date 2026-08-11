@@ -1,0 +1,13 @@
+# Local development only
+tests/
+TODO.md
+
+# Packaging artifacts
+*.zip
+*.rar
+
+# Editor noise
+.vscode/
+*.code-workspace
+Thumbs.db
+desktop.ini

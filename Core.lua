@@ -12,6 +12,7 @@ addon.defaultColors = {
     currency       = {0.3, 0.3, 0.3},
     activities     = {},
     zones          = {},
+    reputations    = {},
     textLeft       = {1, 1, 1},
     textRight      = {1, 1, 1},
     headerText     = {0.3, 0.69, 0.93},

@@ -8,10 +8,23 @@ local TITLE_BAR_HEIGHT = 21
 local containerPool = {}
 local headerPool = {}
 
+-- Hide GameTooltip only if this frame or a child owns it, never someone else's
+local function HideTooltipFor(frame)
+    local tempOwner = GameTooltip:GetOwner()
+    while tempOwner do
+        if tempOwner == frame then
+            GameTooltip:Hide()
+            return
+        end
+        if not tempOwner.GetParent then return end
+        tempOwner = tempOwner:GetParent()
+    end
+end
+
 -- Recycle unused containers
 local function ReleaseContainer(container)
     if not container then return end
-    GameTooltip:Hide()
+    HideTooltipFor(container)
     container:Hide()
     container:ClearAllPoints()
     container:SetParent(nil)
@@ -481,7 +494,7 @@ function addon:CreateContainer(parent, yOffset, hasBar, indent)
         container.timeText:SetScript("OnEnter", nil)
         container.timeText:SetScript("OnLeave", nil)
     end
-    GameTooltip:Hide()
+    HideTooltipFor(container)
     
     if not container.icon then
         container.icon = container:CreateTexture(nil, "OVERLAY")
@@ -808,6 +821,7 @@ function addon:UpdateWeeklySection(parent, yOffset, expStates)
                 local preyAtlases = { "UI-HUD-Minimap-GuildBanner-Normal-Large", "UI-HUD-Minimap-GuildBanner-Heroic-Large", "UI-HUD-Minimap-GuildBanner-Mythic-Large" }
                 local preyLabels = { "Normal", "Hard", "Nightmare" }
                 local preyCounts = { n, h, m }
+                local preyMax = quest.max or 4
 
                 bar.timeText:SetText("")
                 bar.timeText:Hide()
@@ -833,7 +847,7 @@ function addon:UpdateWeeklySection(parent, yOffset, expStates)
                     local rr, rg, rb = GetColor("textRight", nil, 1, 1, 1)
                     elem.qtyText:SetTextColor(rr, rg, rb, 1)
 
-                    elem.qtyText:SetText(tostring(count) .. "/4")
+                    elem.qtyText:SetText(tostring(count) .. "/" .. preyMax)
                     addon:SetFont(elem.qtyText)
                     elem.qtyText:Show()
 
@@ -1240,6 +1254,10 @@ function addon:UpdateReputationsSection(parent, yOffset, expStates)
                     local r, g, b
                     if catID == "delves" then
                         r, g, b = GetColor("delveCompanion", nil, defaultR, defaultG, defaultB)
+                    elseif addon.defaultColors and addon.defaultColors.reputations and addon.defaultColors.reputations[rep.id] then
+                        -- Reputation with its own color, registered per faction ID by the DB
+                        -- module. Used when a reputation should not inherit its zone's color.
+                        r, g, b = GetColor("reputations", rep.id, defaultR, defaultG, defaultB)
                     else
                         r, g, b = GetColor("zones", catID, defaultR, defaultG, defaultB)
                     end
@@ -1310,7 +1328,9 @@ function addon:UpdateProgressSection(parent, yOffset, expStates)
         if not hidden[prog.id] then
             local info = self:GetProgressInfo(prog.id)
 
-            local skipZeroStart = false
+            -- No info means the faction does not exist for this character yet
+            -- (e.g. a future season's renown track), so there is nothing to show.
+            local skipZeroStart = (info == nil)
             if info then
                 if info.isMaxed then
                     skipZeroStart = true
@@ -1469,7 +1489,7 @@ function addon:UpdateRaresSection(parent, yOffset, expStates)
 
                     addon:SetBarColor(bar, zcolor[1], zcolor[2], zcolor[3], 0.8)
 
-                    local mapID = addon.zoneIDs and addon.zoneIDs[rare.zone]
+                    local mapID = rare.mapID or (addon.zoneIDs and addon.zoneIDs[rare.zone])
 
                     if mapID then
                         bar.iconButton:Show()
@@ -1481,6 +1501,13 @@ function addon:UpdateRaresSection(parent, yOffset, expStates)
                             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                             GameTooltip:SetText(rare.name, 1, 1, 1)
                             GameTooltip:AddLine(rare.zone, 1, 1, 1)
+
+                            if rare.mapID then
+                                local subMap = C_Map.GetMapInfo(rare.mapID)
+                                if subMap and subMap.name and subMap.name ~= rare.zone then
+                                    GameTooltip:AddLine(subMap.name, 0.7, 0.7, 0.7)
+                                end
+                            end
                             GameTooltip:AddLine(" ")
                             if rare.x and rare.y then
                                 GameTooltip:AddLine(string.format("Coords: %.1f, %.1f", rare.x, rare.y), 1, 1, 1)
