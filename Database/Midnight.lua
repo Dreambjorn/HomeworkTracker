@@ -185,15 +185,15 @@ addon:RegisterDatabaseInit("midnight", function()
                 nightmare = { 95024,95023,95022,95021,91269,91268,91267,91266,91265,91264,91263,91262,91261,91260,91259,91258,91257,91256,91241,91239,91237,91235,91233,91231,91229,91227,91225,91223,91221,91219,91217,91215,91213,91211 },
             },
         },
-        { name = "Lair: Nymrissa Wavecaller",   questID = {97128},                   questType = "simple", isWeekend = false, category = "general" },
-        { name = "Saltheril's Soiree",          questID = {90575,90573,90574,90576}, questType = "single", isWeekend = false, category = "eversong" },
-        { name = "Abundance",                   questID = {89507},                   questType = "simple", isWeekend = false, category = "zulaman",      handler = "abundance" },
-        { name = "Lost Legends",                questID = {89268},                   questType = "simple", isWeekend = false, category = "harandar" },
-        { name = "Stormarion Assault",          questID = {90962},                   questType = "simple", isWeekend = false, category = "voidstorm" },
-        { name = "Stand Your Ground",           questID = {94581},                   questType = "simple", isWeekend = false, category = "voidstorm" },
-        { name = "Preparing for Battle",        questID = {89354},                   questType = "simple", isWeekend = false, category = "voidstorm" },
-        { name = "Turn Back the Surge",         questID = {96995},                   questType = "simple", isWeekend = false, category = "coiledisle" },
-        { name = "Purging the Vaults",          questID = {95520},                   questType = "simple", isWeekend = false, category = "coiledisle" },
+        { name = "The Tidebound Grotto",        questID = {97128},                   questType = "simple", isWeekend = false, category = "general",    mapID = 2512, x = 60.1, y = 66.4 },
+        { name = "Saltheril's Soiree",          questID = {90575,90573,90574,90576}, questType = "single", isWeekend = false, category = "eversong",   mapID = 2395, x = 42.9, y = 46.4 },
+        { name = "Abundance",                   questID = {89507},                   questType = "simple", isWeekend = false, category = "zulaman",                                      handler = "abundance" },
+        { name = "Lost Legends",                questID = {89268},                   questType = "simple", isWeekend = false, category = "harandar",   mapID = 2413, x = 54.2, y = 53.0 },
+        { name = "Stormarion Assault",          questID = {90962},                   questType = "simple", isWeekend = false, category = "voidstorm",  mapID = 2405, x = 27.3, y = 68.0 },
+        { name = "Stand Your Ground",           questID = {94581},                   questType = "simple", isWeekend = false, category = "voidstorm",  mapID = 2405, x = 27.3, y = 68.0 },
+        { name = "Preparing for Battle",        questID = {89354},                   questType = "simple", isWeekend = false, category = "voidstorm",  mapID = 2444, x = 38.8, y = 81.4 },
+        { name = "Turn Back the Surge",         questID = {96995},                   questType = "simple", isWeekend = false, category = "coiledisle", mapID = 2512, x = 58.6, y = 45.8 },
+        { name = "Purging the Vaults",          questID = {95520},                   questType = "simple", isWeekend = false, category = "coiledisle", mapID = 2509, x = 47.3, y = 63.3 },
         { name = "A Gnawing Void of Curiosity", questID = {93784},                   questType = "simple", isWeekend = false, category = "delves" },
         { name = "Trovehunter's Bounty",        questID = {86371},                   questType = "simple", isWeekend = false, category = "delves" },
     }
@@ -393,12 +393,6 @@ addon:RegisterDatabaseInit("midnight", function()
         v.expansion = "midnight"
         table.insert(addon.reputationDB, v)
     end
-
-    -- Reputation grouping
-    addon.reputationParentMap = addon.reputationParentMap or {}
-    addon.reputationParentMap[2710] = {2711, 2712, 2713, 2714} -- Silvermoon Court -> Magisters, Blood Knights, Farstriders, Shades of the Row  
-    addon.reputationParentMap[2699] = {2770} -- The Singularity -> Slayer's Duellum
-    addon.reputationParentMap[2772] = {2773} -- Zul'jarra's Forces -> Captain Tokka
 
     addon.reputationSortOrder = addon.reputationSortOrder or {}
     for _, v in ipairs(midnightReputations) do

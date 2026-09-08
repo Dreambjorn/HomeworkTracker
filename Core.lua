@@ -96,6 +96,7 @@ eventFrame:RegisterEvent("UPDATE_FACTION")
 eventFrame:RegisterEvent("AREA_POIS_UPDATED")
 eventFrame:RegisterEvent("BAG_UPDATE_DELAYED")
 eventFrame:RegisterEvent("WALK_IN_DATA_UPDATE")
+eventFrame:RegisterEvent("CALENDAR_UPDATE_EVENT_LIST")
 eventFrame:RegisterEvent("PLAYER_LOGOUT")
 
 eventFrame:SetScript("OnEvent", function(self, event, ...)
@@ -106,7 +107,14 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         addon._allowVaultRequery = false
         if addon.CheckVisibilityState then addon:CheckVisibilityState() end
     elseif event == "PLAYER_LOGIN" then
+        -- Loading the calendar is not free, so only ask when something needs it
+        if C_Calendar and C_Calendar.OpenCalendar and addon:WantsHolidayData() then
+            C_Timer.After(5, function() C_Calendar.OpenCalendar() end)
+        end
         if addon.CheckVisibilityState then addon:CheckVisibilityState() end
+        if addon.UpdateDisplay then addon:UpdateDisplay() end
+    elseif event == "CALENDAR_UPDATE_EVENT_LIST" then
+        if addon.InvalidateHolidayCache then addon:InvalidateHolidayCache() end
         if addon.UpdateDisplay then addon:UpdateDisplay() end
     elseif event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" or event == "WALK_IN_DATA_UPDATE" then
         local wasInInstance = addon._inInstance or addon._inDelves
@@ -127,6 +135,10 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         or event == "WEEKLY_REWARDS_UPDATE" or event == "MAJOR_FACTION_RENOWN_LEVEL_CHANGED"
         or event == "UPDATE_FACTION" or event == "AREA_POIS_UPDATED"
         or event == "BAG_UPDATE_DELAYED" then
+        -- A real vault update earns a fresh set of requery attempts
+        if event == "WEEKLY_REWARDS_UPDATE" and addon.ResetGreatVaultRequeries then
+            addon:ResetGreatVaultRequeries()
+        end
         if addon.InvalidateDataCache then addon:InvalidateDataCache() end
         if addon.UpdateDisplay then addon:UpdateDisplay() end
     elseif event == "PLAYER_LOGOUT" then

@@ -7,15 +7,35 @@ local DEFAULT_HEADER_FONT_SIZE = 14
 local DEFAULT_FONT = "Friz Quadrata TT"
 local DEFAULT_FONT_PATH = "Fonts\\FRIZQT__.TTF"
 
+-- Holiday scanning, in months and seconds
+local HOLIDAY_SCAN_MONTHS = 12
+local HOLIDAY_SCAN_DEBOUNCE = 0.3
+local HOLIDAY_CACHE_LEASE = 604800
+local HOLIDAY_RESCAN_COOLDOWN = 600
+local GREAT_VAULT_MAX_REQUERIES = 10
+
 -- Font system with LibSharedMedia
 local LSM = LibStub and LibStub("LibSharedMedia-3.0", true)
 
+-- Cached game data
 local _dataCache = {}
 local CACHE_NIL = {} -- Marks a cache entry whose real value is nil (distinguishes from uncached)
 local _timingResult = {} -- Reused table written by GetEventTiming; avoids creating a new table on every call
 local _greatVaultRequeryFrame = nil -- Lightweight requery frame for missing Great Vault data
+local _greatVaultRequeries = 0 -- Retries left before giving up on missing item levels
+
+-- Holiday windows read off the calendar, keyed by event ID and by name
+local _holidayCache = nil
+local _holidayScanRunning = false
+local _holidayScannedAt = nil
+local _holidayStale = nil
+local _holidaySkew = nil -- Clock offset in force when the cache was built
 
 -- Empty the cache so data is looked up again next time
+function addon:ResetGreatVaultRequeries()
+    _greatVaultRequeries = 0
+end
+
 function addon:InvalidateDataCache()
     wipe(_dataCache)
 end
@@ -23,6 +43,8 @@ end
 -- Silently shows and hides WeeklyRewardsFrame to force a server data refresh
 function addon:RequestGreatVaultRequery()
     if not self._allowVaultRequery then return end
+    if _greatVaultRequeries >= GREAT_VAULT_MAX_REQUERIES then return end
+    _greatVaultRequeries = _greatVaultRequeries + 1
     if _greatVaultRequeryFrame and _greatVaultRequeryFrame:IsShown() then
         _greatVaultRequeryFrame.t = 0
         return
@@ -57,16 +79,6 @@ function addon:RequestGreatVaultRequery()
     end)
 end
 
-
--- Default font size
-function addon:GetDefaultFontSize()
-    return DEFAULT_FONT_SIZE
-end
-
--- Default header font size
-function addon:GetDefaultHeaderFontSize()
-    return DEFAULT_HEADER_FONT_SIZE
-end
 
 -- Saved font name
 function addon:GetFontKey()
@@ -145,17 +157,14 @@ function addon:SetMinimapButtonEnabled(val)
     end
 end
 
--- Check font availability
-function addon:IsFontAvailable(fontKey)
-    if not fontKey or not LSM then return false end
-    local ok, path = pcall(LSM.Fetch, LSM, "font", fontKey)
-    return ok and path ~= nil
-end
-
 -- Format duration string
 function addon:FormatTime(seconds)
     if seconds < 0 then seconds = 0 end
-    if seconds >= 3600 then
+    if seconds >= 1209600 then
+        return string.format("%dw %dd", math.floor(seconds / 604800), math.floor((seconds % 604800) / 86400))
+    elseif seconds >= 86400 then
+        return string.format("%dd %dh", math.floor(seconds / 86400), math.floor((seconds % 86400) / 3600))
+    elseif seconds >= 3600 then
         return string.format("%dh %dm", math.floor(seconds / 3600), math.floor((seconds % 3600) / 60))
     elseif seconds >= 60 then
         return string.format("%dm %ds", math.floor(seconds / 60), seconds % 60)
@@ -192,45 +201,6 @@ function addon:GetCurrentRegion()
         return regionForce.region or GetCurrentRegion()
     end
     return GetCurrentRegion()
-end
-
--- Last weekly reset time
-function addon:GetLastWeeklyResetTime()
-    -- Reset schedule by region (Sun=1)
-    local resetMap = {
-        -- 1 = NA (Americas): Tuesday 03:00
-        [1] = { weekday = 3, hour = 3 },
-        -- 2 = KR: Wednesday 03:00
-        [2] = { weekday = 4, hour = 3 },
-        -- 3 = EU: Tuesday 03:00
-        [3] = { weekday = 3, hour = 3 },
-        -- 4 = TW: Wednesday 03:00
-        [4] = { weekday = 4, hour = 3 },
-        -- 5 = CN: Wednesday 03:00
-        [5] = { weekday = 4, hour = 3 },
-    }
-
-    local region = self:GetCurrentRegion() or 1
-    local resetInfo = resetMap[region]
-    if not resetInfo then
-        return nil
-    end
-
-    local cal = C_DateAndTime.GetCurrentCalendarTime()
-    if not cal then return nil end
-
-    local now = GetServerTime()
-    local secondsSinceMidnight = (cal.hour * 3600) + (cal.minute * 60) + (cal.second or 0)
-    local todayReset = now - secondsSinceMidnight + (resetInfo.hour * 3600)
-    local diffDays = ((cal.weekday - resetInfo.weekday) + 7) % 7
-    local candidate = todayReset - (diffDays * 24 * 3600)
-
-    -- Roll back if future
-    if candidate > now then
-        candidate = candidate - (7 * 24 * 3600)
-    end
-
-    return candidate
 end
 
 -- Reset time for a weekday
@@ -284,6 +254,92 @@ function addon:IsInMajorCity()
     local uiMapID = C_Map.GetBestMapForUnit("player")
     if not uiMapID then return false end
     return addon.majorCities[uiMapID] == true
+end
+
+-- "<Expansion> Dungeon Event" as the calendar spells it, used as a fallback
+function addon:GetCurrentDungeonEventName()
+    local level = GetExpansionLevel and GetExpansionLevel()
+    local name = level and _G["EXPANSION_NAME" .. level]
+    if not name or name == "" then return "Dungeon Event" end
+    return name .. " Dungeon Event"
+end
+
+-- Reputations the player has not started yet
+function addon:IsReputationUnstarted(info, isMaxed)
+    if not info or isMaxed or info.isParagon then return false end
+    if info.renownReputationEarned ~= 0 then return false end
+
+    if info.isRenown then
+        return info.isUnlocked == false
+    elseif info.isStandard then
+        return info.isFirstRank == true
+    elseif info.isFriend then
+        return true
+    end
+
+    return false
+end
+
+-- Great Vault slot detail, as shown in the section tooltip
+function addon:GetGreatVaultSlotDetail(slotKey, entry)
+    if not entry then return nil, false end
+
+    local progress = entry.progress or 0
+    local threshold = entry.threshold or 0
+    if threshold <= 0 or progress < threshold then
+        return string.format("%d/%d", progress, threshold), false
+    end
+
+    local parts = {}
+    local level = entry.level
+    if slotKey == "mythicPlus" and level and level > 0 then
+        table.insert(parts, "+" .. level)
+    elseif slotKey == "delves" and level and level > 0 then
+        table.insert(parts, "Tier " .. level)
+    elseif slotKey == "raid" and entry.difficultyId
+        and DifficultyUtil and DifficultyUtil.GetDifficultyName then
+        table.insert(parts, DifficultyUtil.GetDifficultyName(entry.difficultyId) or "")
+    end
+
+    if entry.itemLevel then
+        if entry.upgradeItemLevel and entry.upgradeItemLevel > entry.itemLevel then
+            table.insert(parts, string.format("ilvl %d (up to %d)", entry.itemLevel, entry.upgradeItemLevel))
+        else
+            table.insert(parts, string.format("ilvl %d", entry.itemLevel))
+        end
+    end
+
+    if #parts == 0 then return "Unlocked", true end
+    return table.concat(parts, "  "), true
+end
+
+-- Zone name for a map, or nil when the map is unknown
+function addon:GetMapName(uiMapID)
+    if not (uiMapID and C_Map and C_Map.GetMapInfo) then return nil end
+    local info = C_Map.GetMapInfo(uiMapID)
+    return info and info.name or nil
+end
+
+-- Where a weekly sends the player: quest giver if known, else its zone
+function addon:GetWeeklyLocation(quest)
+    if not (quest and quest.mapID) then return nil end
+    return quest.mapID, quest.x, quest.y
+end
+
+-- Open the world map on a zone without tainting it
+function addon:OpenWorldMapTo(uiMapID)
+    if not uiMapID then return false end
+    if InCombatLockdown() then return false end
+    if C_Map and C_Map.OpenWorldMap then
+        C_Map.OpenWorldMap(uiMapID)
+        return true
+    end
+    if WorldMapFrame and WorldMapFrame.SetMapID then
+        ShowUIPanel(WorldMapFrame)
+        WorldMapFrame:SetMapID(uiMapID)
+        return true
+    end
+    return false
 end
 
 -- Blizzard waypoint support helpers
@@ -360,6 +416,7 @@ function addon:GetGreatVaultInfo()
     end
     
     _dataCache.greatVault = data
+    if not requeryNeeded then _greatVaultRequeries = 0 end
     if requeryNeeded then
         self:RequestGreatVaultRequery()
     end
@@ -428,7 +485,8 @@ function addon:GetProgressInfo(progressID)
             renownReputationEarned = majorData.renownReputationEarned or 0,
             renownLevelThreshold = majorData.renownLevelThreshold or 1,
             isMaxed = isMaxed,
-            isRenown = true
+            isRenown = true,
+            isUnlocked = majorData.isUnlocked,
         }
         _dataCache[cacheKey] = result
         return result
@@ -436,6 +494,30 @@ function addon:GetProgressInfo(progressID)
 
     _dataCache[cacheKey] = CACHE_NIL
     return nil
+end
+
+-- Paragon overlay for a reputation that has nothing left to rank up
+local function ApplyParagonInfo(result, repID)
+    if not (result and result.isMaxed) then return result end
+    if not (C_Reputation and C_Reputation.IsFactionParagon and C_Reputation.IsFactionParagon(repID)) then
+        return result
+    end
+
+    local value, threshold, _, hasRewardPending = C_Reputation.GetFactionParagonInfo(repID)
+    if not value or not threshold or threshold <= 0 then return result end
+
+    result.isParagon = true
+    result.isMaxed = false
+    result.hasRewardPending = hasRewardPending == true
+    result.paragonLevel = math.floor(value / threshold)
+    result.renownLevelThreshold = threshold
+    result.renownReputationEarned = result.hasRewardPending and threshold or (value % threshold)
+
+    local label = _G.PARAGON or "Paragon"
+    if result.paragonLevel > 0 then label = label .. " " .. result.paragonLevel end
+    result.label = label
+
+    return result
 end
 
 -- Faction reputation info
@@ -454,9 +536,10 @@ function addon:GetReputationInfo(repID)
             renownReputationEarned = majorData.renownReputationEarned or 0,
             renownLevelThreshold = majorData.renownLevelThreshold or 1,
             isMaxed = isMaxed,
-            isRenown = true
+            isRenown = true,
+            isUnlocked = majorData.isUnlocked,
         }
-        _dataCache[cacheKey] = result
+        _dataCache[cacheKey] = ApplyParagonInfo(result, repID)
         return result
     end
     
@@ -481,7 +564,7 @@ function addon:GetReputationInfo(repID)
             isMaxed = isMaxed,
             isFriend = true
         }
-        _dataCache[cacheKey] = result
+        _dataCache[cacheKey] = ApplyParagonInfo(result, repID)
         return result
     end
 
@@ -512,7 +595,7 @@ function addon:GetReputationInfo(repID)
             isStandard = true,
             isFirstRank = isFirstRank,
         }
-        _dataCache[cacheKey] = result
+        _dataCache[cacheKey] = ApplyParagonInfo(result, repID)
         return result
     end
     
@@ -525,6 +608,7 @@ function addon:GetEventName(eventKey)
     local lang = GetLocale()
     local event = self.eventDB[eventKey]
     if not event then return eventKey end
+    if type(event.name) == "string" then return event.name end
     return event.name[lang] or event.name["enUS"] or eventKey
 end
 
@@ -532,7 +616,9 @@ end
 function addon:IsEventComplete(eventKey)
     local event = self.eventDB[eventKey]
     if not event then return false end
-    
+    -- World events run on the calendar and have no quest to complete
+    if not event.questID then return false end
+
     local questP, questT = 0, event.questReq
     for _, questID in pairs(event.questID) do
         if questID ~= 0 then
@@ -543,10 +629,301 @@ function addon:IsEventComplete(eventKey)
     return questP == questT
 end
 
+-- time() reads its table as local time, but calendar times are realm time
+local function ServerTimeSkew()
+    if not (C_DateAndTime and C_DateAndTime.GetCurrentCalendarTime) then return 0 end
+    local now = C_DateAndTime.GetCurrentCalendarTime()
+    if not now then return 0 end
+    local year, month, day = now.year, now.month, now.monthDay or now.day
+    local hour, minute = now.hour or 0, now.minute or 0
+    if not (year and month and day) then return 0 end
+    local asLocal = time({ year = year, month = month, day = day, hour = hour, min = minute, sec = 0 })
+    -- The calendar only reports whole minutes while GetServerTime counts seconds,
+    -- so the raw difference drifts. Real offsets are quarter hours; round to one.
+    local raw = (asLocal or 0) - GetServerTime()
+    return math.floor(raw / 900 + 0.5) * 900
+end
+
+-- Calendar time table to a server epoch
+local function CalendarTimeToEpoch(t)
+    if type(t) == "number" then return t end
+    if type(t) ~= "table" then return nil end
+
+    local year, month, day = t.year, t.month, t.monthDay or t.day
+    local hour, minute = t.hour or 0, t.minute or 0
+    if not (year and month and day) then return nil end
+
+    local asLocal = time({ year = year, month = month, day = day, hour = hour, min = minute, sec = 0 })
+    if not asLocal then return nil end
+    return asLocal - ServerTimeSkew()
+end
+
+-- Lowercased holiday names, worked out once and kept on the event
+local function LowerNames(event)
+    if not event.holidayNames then return nil end
+    if not event.lowerNames then
+        local lowered = {}
+        for i, name in ipairs(event.holidayNames) do lowered[i] = name:lower() end
+        event.lowerNames = lowered
+    end
+    return event.lowerNames
+end
+
+-- True when any world event is switched on
+function addon:WantsHolidayData()
+    local cfg = HomeworkTrackerDB and HomeworkTrackerDB.activities
+    if not cfg then return false end
+    for key, event in pairs(self.eventDB or {}) do
+        if cfg[key] and (event.holidayID or event.holidayNames) then return true end
+    end
+    return false
+end
+
+-- Holidays the player asked to see, by ID and by lowercased name
+local function WantedHolidays()
+    local cfg = HomeworkTrackerDB and HomeworkTrackerDB.activities
+    if not cfg then return nil, nil, 0 end
+
+    local ids, names, count = {}, {}, 0
+    for key, event in pairs(addon.eventDB or {}) do
+        if cfg[key] and (event.holidayID or event.holidayNames) then
+            for _, id in ipairs(event.holidayID or {}) do
+                if not ids[id] then ids[id] = true; count = count + 1 end
+            end
+            local lowered = LowerNames(event)
+            for _, name in ipairs(lowered or {}) do
+                if not names[name] then names[name] = true; count = count + 1 end
+            end
+        end
+    end
+    return ids, names, count
+end
+
+local function RecordHoliday(store, key, entry)
+    local prev = store[key]
+    if not prev or entry.startTime < prev.startTime then
+        store[key] = entry
+    end
+end
+
+-- Read one month, taking only the opening entry of each wanted holiday
+local function ScanCalendarMonth(found, wantedIds, wantedNames, numDays)
+    for day = 1, (numDays or 31) do
+        local count = C_Calendar.GetNumDayEvents(0, day) or 0
+        for index = 1, count do
+            local e = C_Calendar.GetDayEvent(0, day, index)
+            if e and e.calendarType == "HOLIDAY"
+                and (not e.sequenceType or e.sequenceType == "" or e.sequenceType == "START") then
+
+                local id, name = e.eventID, e.title
+                if (id and wantedIds[id]) or (name and wantedNames[name:lower()]) then
+                    local startTime = CalendarTimeToEpoch(e.startTime)
+                    local endTime = CalendarTimeToEpoch(e.endTime)
+                    if startTime and endTime then
+                        local entry = { name = name, startTime = startTime, endTime = endTime }
+                        if id then RecordHoliday(found.byID, id, entry) end
+                        if name then RecordHoliday(found.byName, name:lower(), entry) end
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- The scan result survives a reload, so most sessions never touch the calendar
+local function LoadStoredHolidays()
+    local store = HomeworkTrackerAccountDB and HomeworkTrackerAccountDB.__holidays
+    if type(store) ~= "table" then return nil end
+    if type(store.lease) ~= "number" or store.lease <= GetServerTime() then return nil end
+    if type(store.byID) ~= "table" or type(store.byName) ~= "table" then return nil end
+    -- Dates worked out under a different clock offset are an hour out
+    if store.skew ~= ServerTimeSkew() then return nil end
+    return { byID = store.byID, byName = store.byName }
+end
+
+local function StoreHolidays(found)
+    if type(HomeworkTrackerAccountDB) ~= "table" then return end
+    HomeworkTrackerAccountDB.__holidays = {
+        lease = GetServerTime() + HOLIDAY_CACHE_LEASE,
+        skew = ServerTimeSkew(),
+        byID = found.byID,
+        byName = found.byName,
+    }
+end
+
+-- Flipping several options in a row should cost one scan, not one per click
+local ScheduleHolidayScan
+do
+    local queued, lastRun
+    ScheduleHolidayScan = function()
+        if queued then return end
+        -- The first change runs at once; only a burst behind it waits
+        if not lastRun or (GetTime() - lastRun) >= HOLIDAY_SCAN_DEBOUNCE then
+            lastRun = GetTime()
+            addon:RequestHolidayScan()
+            return
+        end
+        queued = true
+        C_Timer.After(HOLIDAY_SCAN_DEBOUNCE, function()
+            queued = false
+            lastRun = GetTime()
+            addon:RequestHolidayScan()
+        end)
+    end
+end
+
+-- Walk a year of calendar months in one pass
+function addon:RequestHolidayScan()
+    if _holidayScanRunning then return end
+    if _holidayCache and not _holidayStale then return end
+
+    local wantedIds, wantedNames, count = WantedHolidays()
+    if not wantedIds or count == 0 then
+        _holidayCache = { byID = {}, byName = {} }
+        _holidayScannedAt = GetTime()
+        _holidayStale = nil
+        return
+    end
+
+    if not _holidayStale then
+        local stored = LoadStoredHolidays()
+        if stored then
+            _holidayCache = stored
+            _holidayScannedAt = GetTime()
+            _holidaySkew = ServerTimeSkew()
+            return
+        end
+    end
+
+    if not (C_Calendar and C_Calendar.GetNumDayEvents and C_Calendar.GetDayEvent
+        and C_Calendar.SetAbsMonth and C_Calendar.SetMonth and C_Calendar.GetMonthInfo) then
+        return
+    end
+
+    local today = C_DateAndTime and C_DateAndTime.GetCurrentCalendarTime
+        and C_DateAndTime.GetCurrentCalendarTime()
+    if not (today and today.month and today.year) then return end
+
+    -- The calendar UI shares this reference month, so put it back afterwards
+    local saved = C_Calendar.GetMonthInfo(0)
+    local savedMonth = saved and saved.month or today.month
+    local savedYear = saved and saved.year or today.year
+
+    _holidayScanRunning = true
+    _holidayStale = nil
+
+    local found = { byID = {}, byName = {} }
+    C_Calendar.SetAbsMonth(today.month, today.year)
+    for _ = 1, HOLIDAY_SCAN_MONTHS do
+        local info = C_Calendar.GetMonthInfo(0)
+        local numDays = info and info.numDays or 31
+        ScanCalendarMonth(found, wantedIds, wantedNames, numDays)
+        C_Calendar.SetMonth(1)
+    end
+    C_Calendar.SetAbsMonth(savedMonth, savedYear)
+
+    _holidayCache = found
+    _holidayScannedAt = GetTime()
+    _holidaySkew = ServerTimeSkew()
+    _holidayScanRunning = false
+    StoreHolidays(found)
+    if addon.UpdateDisplay then
+        C_Timer.After(0, function() addon:UpdateDisplay() end)
+    end
+end
+
+-- Rescan only for an event switched on whose dates are not cached already
+function addon:EnsureHolidayScanned(eventKey)
+    local event = self.eventDB and self.eventDB[eventKey]
+    if not (event and (event.holidayID or event.holidayNames)) then return end
+    if _holidayCache and self:GetHolidayWindow(event) then return end
+    self:InvalidateHolidayCache(true)
+end
+
+-- Drop the cached scan so the next lookup rebuilds it
+function addon:InvalidateHolidayCache(force)
+    if _holidayScanRunning then return end
+    if not force and _holidayScannedAt
+        and (GetTime() - _holidayScannedAt) < HOLIDAY_RESCAN_COOLDOWN then
+        return
+    end
+    if force and type(HomeworkTrackerAccountDB) == "table" then
+        HomeworkTrackerAccountDB.__holidays = nil
+    end
+    -- Marked rather than dropped, so what is on screen survives the rescan
+    _holidayStale = true
+    ScheduleHolidayScan()
+end
+
+-- Start and end of a holiday, the soonest match for an event
+function addon:GetHolidayWindow(event)
+    if not _holidayCache or _holidayStale then
+        ScheduleHolidayScan()
+        if not _holidayCache then return nil end
+    end
+
+    local now = GetServerTime()
+    local best, bestID
+
+    local byID = _holidayCache.byID
+    if event.holidayID then
+        for i = 1, #event.holidayID do
+            local id = event.holidayID[i]
+            local entry = byID[id]
+            -- Windows already over say nothing about the next one
+            if entry and entry.endTime > now and (not best or entry.startTime < best.startTime) then
+                best, bestID = entry, id
+            end
+        end
+    end
+
+    -- Names are only a fallback for a calendar entry that carried no ID
+    if not best then
+        local lowered = LowerNames(event)
+        if lowered then
+            local byName = _holidayCache.byName
+            for i = 1, #lowered do
+                local entry = byName[lowered[i]]
+                if entry and entry.endTime > now and (not best or entry.startTime < best.startTime) then
+                    best = entry
+                end
+            end
+        end
+    end
+
+    if not best then return nil end
+    return best.startTime, best.endTime, best.name, bestID
+end
+
+-- Timing for a calendar holiday, which has no fixed cycle to compute from
+function addon:GetHolidayTiming(event)
+    local startTime, endTime, name, id = self:GetHolidayWindow(event)
+    if not startTime then return nil end
+
+    -- Recover the timewalking expansion from the event ID
+    local label = id and event.holidayLabels and event.holidayLabels[id]
+    if label then name = (event.name or name) .. ": " .. label end
+
+    local now = GetServerTime()
+    local active = now >= startTime
+
+    _timingResult.active         = active
+    _timingResult.remaining      = active and (endTime - now) or (startTime - now)
+    _timingResult.next           = startTime - now
+    _timingResult.duration       = endTime - startTime
+    _timingResult.expirationTime = GetTime() + _timingResult.remaining
+    _timingResult.color          = event.color
+    _timingResult.alert          = false
+    _timingResult.holidayName    = name
+    return _timingResult
+end
+
 -- Event timing and alerts
 function addon:GetEventTiming(eventKey)
     local event = self.eventDB[eventKey]
     if not event then return nil end
+
+    if event.holidayID or event.holidayNames then return self:GetHolidayTiming(event) end
     
     local cfg = (HomeworkTrackerDB and HomeworkTrackerDB.activities) or {}
     local region = self:GetCurrentRegion()
@@ -578,6 +955,8 @@ function addon:GetEventTiming(eventKey)
     _timingResult.expirationTime = GetTime() + remaining
     _timingResult.color          = event.color
     _timingResult.alert          = alertEnabled
+    -- Shared table, so clear what only the holiday path sets
+    _timingResult.holidayName    = nil
     return _timingResult
 end
 
@@ -708,6 +1087,9 @@ function addon:GetWeeklyQuestInfo()
                 required = quest.questType == "multiple" and #questIDs or 1,
                 category = quest.category,
                 handler = quest.handler,
+                mapID = quest.mapID,
+                x = quest.x,
+                y = quest.y,
                 max = quest.max,
                 preyCounts = preyCounts,
                 preyQuestIDs = preyQuestIDs,

@@ -197,16 +197,16 @@ addon:RegisterDatabaseInit("theWarWithin", function()
     
     -- Weekly Quests
     local twwWeekly = {
-        { name = "Reduce, Reuse, Resell",     questID = {85879},                             questType = "simple",   isWeekend = false, category = "undermine" },
-        { name = "The Main Event",            questID = {85088},                             questType = "simple",   isWeekend = false, category = "undermine" },
-        { name = "Urge to Surge",             questID = {86775},                             questType = "simple",   isWeekend = false, category = "undermine" },
-        { name = "Many Jobs, Handle It!",     questID = {85869},                             questType = "simple",   isWeekend = false, category = "undermine" },
+        { name = "Reduce, Reuse, Resell",     questID = {85879},                             questType = "simple",   isWeekend = false, category = "undermine",  mapID = 2346, x = 26.6, y = 37.3 },
+        { name = "The Main Event",            questID = {85088},                             questType = "simple",   isWeekend = false, category = "undermine",  mapID = 2346, x = 49.4, y = 17.2 },
+        { name = "Urge to Surge",             questID = {86775},                             questType = "simple",   isWeekend = false, category = "undermine",  mapID = 2346, x = 43.8, y = 50.8 },
+        { name = "Many Jobs, Handle It!",     questID = {85869},                             questType = "simple",   isWeekend = false, category = "undermine",  mapID = 2346, x = 43.8, y = 50.8 },
         { name = "Adventurer's Cache",        questID = {84736, 84737, 84738, 84739},        questType = "multiple", isWeekend = false, category = "general" },
-        { name = "Awaken the Machine",        questID = {83333},                             questType = "simple",   isWeekend = false, category = "deeps" },
-        { name = "Hallowfall Fishing Derby",  questID = {83529, 83530, 83531, 83532, 82778}, questType = "single",   isWeekend = true,  category = "hallowfall" },
-        { name = "Rollin' Down in the Deeps", questID = {82946},                             questType = "simple",   isWeekend = false, category = "deeps" },
-        { name = "Spreading The Light",       questID = {76586},                             questType = "simple",   isWeekend = false, category = "hallowfall" },
-        { name = "Underworld Operative",      questID = {80670, 80671, 80672},               questType = "single",   isWeekend = false, category = "azjkahet" },
+        { name = "Awaken the Machine",        questID = {83333},                             questType = "simple",   isWeekend = false, category = "deeps",      mapID = 2214, x = 43.3, y = 32.0 },
+        { name = "Hallowfall Fishing Derby",  questID = {83529, 83530, 83531, 83532, 82778}, questType = "single",   isWeekend = true,  category = "hallowfall", mapID = 2215, x = 39.1, y = 57.6 },
+        { name = "Rollin' Down in the Deeps", questID = {82946},                             questType = "simple",   isWeekend = false, category = "deeps",      mapID = 2214, x = 43.5, y = 35.3 },
+        { name = "Spreading The Light",       questID = {76586},                             questType = "simple",   isWeekend = false, category = "hallowfall", mapID = 2215, x = 62.9, y = 32.1 },
+        { name = "Underworld Operative",      questID = {80670, 80671, 80672},               questType = "single",   isWeekend = false, category = "azjkahet",   mapID = 2255, x = 56.4, y = 43.3 },
         { name = "Weekly Dungeon",
             questType = "single", isWeekend = false, category = "general",
             questID = {
@@ -223,7 +223,7 @@ addon:RegisterDatabaseInit("theWarWithin", function()
                 [81624] = "Orta",
             },
         },
-        { name = "Reshanor, the Untethered",  questID = {87354},                             questType = "simple",   isWeekend = false, category = "karesh" },
+        { name = "Reshanor, the Untethered",  questID = {87354},                             questType = "simple",   isWeekend = false, category = "karesh",     mapID = 2371, x = 71.0, y = 45.0 },
         { name = "World Soul",
             questType = "single", isWeekend = false, category = "general",
             questID = {
@@ -234,8 +234,8 @@ addon:RegisterDatabaseInit("theWarWithin", function()
                 89514, 91855,
             },
         },
-        { name = "More Than Just a Phase",    questID = {91093},                             questType = "simple",   isWeekend = false, category = "karesh" },
-        { name = "Ecological Succession",     questID = {85460},                             questType = "simple",   isWeekend = false, category = "karesh" },
+        { name = "More Than Just a Phase",    questID = {91093},                             questType = "simple",   isWeekend = false, category = "karesh",     mapID = 2371, x = 50.4, y = 36.4 },
+        { name = "Ecological Succession",     questID = {85460},                             questType = "simple",   isWeekend = false, category = "karesh",     mapID = 2371, x = 76.2, y = 34.6 },
     }
     
     addon.weeklyDB = addon.weeklyDB or {}
@@ -433,11 +433,6 @@ addon:RegisterDatabaseInit("theWarWithin", function()
         v.expansion = "theWarWithin"
         table.insert(addon.reputationDB, v)
     end
-
-    -- Reputation grouping
-    addon.reputationParentMap = addon.reputationParentMap or {}
-    addon.reputationParentMap[2600] = {2605, 2607, 2601} -- The Severed Threads -> The General, The Vizier, The Weaver
-    addon.reputationParentMap[2653] = {2673, 2675, 2677, 2671, 2669} -- The Cartels of Undermine -> Bilgewater, Blackwater, Darkfuse, Steamwheedle, Venture Company
 
     addon.reputationSortOrder = addon.reputationSortOrder or {}
     for _, v in ipairs(twwReputations) do

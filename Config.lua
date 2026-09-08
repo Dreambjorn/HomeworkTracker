@@ -1990,59 +1990,75 @@ end
 -- Build activities tab
 local function BuildTab_Activities(parent)
     local y = -10
-    local h2 = CreateHeader(parent, "Timers")
-    h2:SetPoint("TOPLEFT", 10, y)
-    y = y - BIG_GAP + 10
-    
+
     local selectedExpansion = GetSelectedExpansion()
     local hasEnabledExpansion = (selectedExpansion ~= nil)
 
-    if hasEnabledExpansion then
-
-        local events = {}
-        for key, ev in pairs(addon.eventDB or {}) do
-            if not ev.expansion or ev.expansion == selectedExpansion then
-                table.insert(events, key)
-            end
+    -- World events belong to no expansion, so they get their own group
+    local worldEvents, expansionEvents = {}, {}
+    for key, ev in pairs(addon.eventDB or {}) do
+        if not ev.expansion then
+            table.insert(worldEvents, key)
+        elseif ev.expansion == selectedExpansion then
+            table.insert(expansionEvents, key)
         end
-        table.sort(events, function(a, b) return addon:GetEventName(a) < addon:GetEventName(b) end)
+    end
 
-        if #events == 0 then
+    local function ByName(a, b) return addon:GetEventName(a) < addon:GetEventName(b) end
+    table.sort(worldEvents, ByName)
+    table.sort(expansionEvents, ByName)
+
+    local function AddEventCheckboxes(keys, emptyText)
+        if #keys == 0 then
             local msg = parent:CreateFontString(nil, "OVERLAY")
             msg:SetPoint("TOPLEFT", 30, y)
             SetConfigFont(msg, 12)
-            msg:SetText("No activities for the selected expansion.")
+            msg:SetText(emptyText)
             msg:SetTextColor(0.6, 0.6, 0.6)
             y = y - SMALL_GAP - 14
-        else
-            for _, k in ipairs(events) do
-
-                if HomeworkTrackerDB.activities[k] == nil then
-                    HomeworkTrackerDB.activities[k] = (addon.defaults.activities and addon.defaults.activities[k]) or false
-                end
-                local label = addon:GetEventName(k)
-                local cb = CreateCheckbox(parent, "Show " .. label, (function(key)
-                    return function(val) HomeworkTrackerDB.activities[key] = val; addon:UpdateDisplay() end
-                end)(k))
-                cb:SetPoint("TOPLEFT", 30, y)
-                cb.check:SetChecked(HomeworkTrackerDB.activities[k])
-                y = y - SMALL_GAP - 14
-            end
-            y = y - SMALL_GAP
+            return
         end
+
+        for _, k in ipairs(keys) do
+            if HomeworkTrackerDB.activities[k] == nil then
+                HomeworkTrackerDB.activities[k] = (addon.defaults.activities and addon.defaults.activities[k]) or false
+            end
+            local cb = CreateCheckbox(parent, "Show " .. addon:GetEventName(k), (function(key)
+                return function(val)
+                    HomeworkTrackerDB.activities[key] = val
+                    -- Switching one off needs no new dates, only a redraw
+                    if val then addon:EnsureHolidayScanned(key) end
+                    addon:UpdateDisplay()
+                end
+            end)(k))
+            cb:SetPoint("TOPLEFT", 30, y)
+            cb.check:SetChecked(HomeworkTrackerDB.activities[k])
+            y = y - SMALL_GAP - 14
+        end
+        y = y - SMALL_GAP
+    end
+
+    local hExp = CreateHeader(parent, "Expansion Timers")
+    hExp:SetPoint("TOPLEFT", 10, y)
+    y = y - BIG_GAP + 10
+    if hasEnabledExpansion then
+        AddEventCheckboxes(expansionEvents, "No activities for the selected expansion.")
     else
         local msg = parent:CreateFontString(nil, "OVERLAY")
         msg:SetPoint("TOPLEFT", 30, y)
         SetConfigFont(msg, 12)
         msg:SetText("No expansion is currently enabled.")
         msg:SetTextColor(0.6, 0.6, 0.6)
-
         y = y - SMALL_GAP - 14
     end
 
-    if hasEnabledExpansion then
-        y = y + SMALL_GAP
-    end
+    y = y + SMALL_GAP
+    local hWorld = CreateHeader(parent, "World Events")
+    hWorld:SetPoint("TOPLEFT", 10, y)
+    y = y - BIG_GAP + 10
+    AddEventCheckboxes(worldEvents, "No world events.")
+
+    y = y + SMALL_GAP
 
     local h = CreateHeader(parent, "Options")
     h:SetPoint("TOPLEFT", 10, y)
@@ -2518,7 +2534,7 @@ local function BuildTab_Reputations(parent)
     h1:SetPoint("TOPLEFT", 10, y)
     y = y - BIG_GAP + 10
     
-    local cb2 = CreateCheckbox(parent, "Hide Max Renown Reputations", function(val)
+    local cb2 = CreateCheckbox(parent, "Hide Completed Reputations", function(val)
         HomeworkTrackerDB.reputations.hideComplete = val
         addon:UpdateDisplay()
     end)

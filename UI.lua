@@ -5,6 +5,7 @@ local addonName, addon = ...
 local TITLE_BAR_HEIGHT = 21
 
 -- Manage container pool
+local ROW_ELEMENT_POOLS = { "crestElements", "preyElements", "abundanceElements" }
 local containerPool = {}
 local headerPool = {}
 
@@ -21,51 +22,79 @@ local function HideTooltipFor(frame)
     end
 end
 
--- Recycle unused containers
-local function ReleaseContainer(container)
+-- Strip everything a section may have set, so a recycled row starts clean
+local function ResetRowState(container)
     if not container then return end
-    HideTooltipFor(container)
-    container:Hide()
-    container:ClearAllPoints()
-    container:SetParent(nil)
+    container._activityKey = nil
+
     container:SetScript("OnEnter", nil)
     container:SetScript("OnLeave", nil)
     container:SetScript("OnMouseUp", nil)
     container:SetScript("OnMouseDown", nil)
-    container:EnableMouse(false)
-    container._activityKey = nil
-    if container.icon then container.icon:SetTexture(nil); container.icon:Hide() end
+
+    if container.icon then
+        container.icon:SetTexture(nil)
+        container.icon:Hide()
+    end
+
     if container.iconButton then
         container.iconButton:Hide()
+        container.iconButton:SetFrameLevel(container:GetFrameLevel() + 1)
+        container.iconButton:SetScript("OnClick", nil)
         container.iconButton:SetScript("OnEnter", nil)
         container.iconButton:SetScript("OnLeave", nil)
         container.iconButton:SetScript("OnMouseUp", nil)
+        container.iconButton:SetScript("OnMouseDown", nil)
     end
-    if container.nameText then container.nameText:SetText(""); container.nameText:Hide() end
-    if container.timeText then container.timeText:SetText(""); container.timeText:Hide() end
-    if container.progress then container.progress:Hide() end
 
-    if container.crestElements then
-        for _, e in ipairs(container.crestElements) do
-            if e.icon then e.icon:SetTexture(nil); e.icon:Hide() end
-            if e.qtyText then e.qtyText:SetText(""); e.qtyText:Hide() end
-            e:Hide()
+    if container.nameText then container.nameText:SetText("") end
+    if container.timeText then
+        container.timeText:SetText("")
+        container.timeText:EnableMouse(false)
+        container.timeText:SetScript("OnEnter", nil)
+        container.timeText:SetScript("OnLeave", nil)
+        container.timeText:SetScript("OnMouseUp", nil)
+    end
+
+    for _, key in ipairs(ROW_ELEMENT_POOLS) do
+        local list = container[key]
+        if list then
+            for _, e in ipairs(list) do
+                e:Hide()
+                if e.icon then e.icon:SetTexture(nil); e.icon:Hide() end
+                if e.qtyText then e.qtyText:SetText(""); e.qtyText:Hide() end
+                -- Hiding the element hides its button; hiding the button itself
+                -- would be permanent, since no section ever shows it again
+                if e.iconButton then
+                    e.iconButton:SetScript("OnEnter", nil)
+                    e.iconButton:SetScript("OnLeave", nil)
+                    e.iconButton:SetScript("OnMouseUp", nil)
+                    e.iconButton:SetScript("OnMouseDown", nil)
+                end
+            end
         end
     end
-    if container.preyElements then
-        for _, e in ipairs(container.preyElements) do
-            if e.icon then e.icon:SetTexture(nil); e.icon:Hide() end
-            if e.qtyText then e.qtyText:SetText(""); e.qtyText:Hide() end
-            e:Hide()
-        end
+end
+
+-- Recycle unused containers
+local function ReleaseContainer(container)
+    if not container then return end
+    if container.__pooled then return end
+    container.__pooled = true
+    container.__live = nil
+    HideTooltipFor(container)
+    container:Hide()
+    container:ClearAllPoints()
+    container:SetParent(nil)
+    container:EnableMouse(false)
+    ResetRowState(container)
+    if container.nameButton then
+        container.nameButton:Hide()
+        container.nameButton:ClearAllPoints()
     end
-    if container.abundanceElements then
-        for _, e in ipairs(container.abundanceElements) do
-            if e.icon then e.icon:SetTexture(nil); e.icon:Hide() end
-            if e.qtyText then e.qtyText:SetText(""); e.qtyText:Hide() end
-            e:Hide()
-        end
-    end
+    if container.nameText then container.nameText:Hide() end
+    if container.timeText then container.timeText:Hide() end
+    if container.progress then container.progress:Hide() end
 
     if container.__poolType == "header" then
         table.insert(headerPool, container)
@@ -117,15 +146,14 @@ function addon:CreateUI()
     frame:SetMovable(true)
     frame:SetClampedToScreen(true)
     
-    local updateTimer = 0
-    frame:SetScript("OnUpdate", function(self, elapsed)
-        if not addon.mainFrame or not addon.mainFrame:IsShown() then return end
-        updateTimer = updateTimer + elapsed
-        if updateTimer >= 1 then
-            updateTimer = 0
-            addon:UpdateActivityTimers()
-        end
-    end)
+    -- A ticker costs one call a second; OnUpdate cost one every frame
+    if not addon._activityTicker then
+        addon._activityTicker = C_Timer.NewTicker(1, function()
+            if addon.mainFrame and addon.mainFrame:IsShown() then
+                addon:UpdateActivityTimers()
+            end
+        end)
+    end
     
     self.mainFrame = frame
     self.sections = {}
@@ -429,6 +457,7 @@ end
 function addon:CreateSectionHeader(parent, text, yOffset)
     local header = table.remove(headerPool)
     if header then
+        header.__pooled = nil
         header:SetParent(parent)
         header:ClearAllPoints()
         header:Show()
@@ -450,6 +479,10 @@ end
 function addon:CreateContainer(parent, yOffset, hasBar, indent)
     indent = indent or 5
     local container = table.remove(containerPool)
+    -- A row still in use would be written by two sections at once
+    while container and container.__live do
+        container = table.remove(containerPool)
+    end
     local fw = self:GetFrameWidth()
     local rightMargin = 15
     local containerWidth = math.max(20, fw - (indent + rightMargin))
@@ -466,14 +499,19 @@ function addon:CreateContainer(parent, yOffset, hasBar, indent)
         container:SetPoint("TOPLEFT", parent, "TOPLEFT", indent, yOffset)
     end
     
+    container.__pooled = nil
+    container.__live = true
     container:EnableMouse(true)
+    ResetRowState(container)
     
     if not container.nameText then
         container.nameText = container:CreateFontString(nil, "OVERLAY")
         addon:SetFont(container.nameText)
     end
+    container.nameText:ClearAllPoints()
     container.nameText:SetPoint(hasBar and "BOTTOMLEFT" or "LEFT", container, hasBar and "TOPLEFT" or "LEFT", 0, hasBar and -8 or 0)
     local lr,lg,lb = GetColor("textLeft", nil, 1,1,1)
+    container.nameText:SetText("")
     container.nameText:SetTextColor(lr, lg, lb, 1)
     container.nameText:SetJustifyH("LEFT")
     container.nameText:Show()
@@ -482,11 +520,39 @@ function addon:CreateContainer(parent, yOffset, hasBar, indent)
         container.timeText = container:CreateFontString(nil, "OVERLAY")
         addon:SetFont(container.timeText)
     end
+    container.timeText:ClearAllPoints()
     container.timeText:SetPoint(hasBar and "BOTTOMRIGHT" or "RIGHT", container, hasBar and "TOPRIGHT" or "RIGHT", -16, hasBar and -8 or 0)
     local rr,rg,rb = GetColor("textRight", nil, 1,1,1)
+    container.timeText:SetText("")
     container.timeText:SetTextColor(rr, rg, rb, 1)
     container.timeText:SetJustifyH("RIGHT")
     container.timeText:Show()
+
+    -- Stop a long name from running under its own value; it truncates instead
+    container.nameText:SetPoint("RIGHT", container.timeText, "LEFT", -6, 0)
+    container.nameText:SetWordWrap(false)
+
+    -- Hovering a truncated name shows it in full, read live off the frame
+    if not container.nameButton then
+        container.nameButton = CreateFrame("Button", nil, container)
+        container.nameButton:SetScript("OnEnter", function(self)
+            local label = self:GetParent().nameText
+            if not label:IsTruncated() then return end
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText(label:GetText() or "", 1, 1, 1)
+            GameTooltip:Show()
+        end)
+        container.nameButton:SetScript("OnLeave", function(self)
+            if GameTooltip:GetOwner() == self then GameTooltip:Hide() end
+        end)
+    end
+    container.nameButton:ClearAllPoints()
+    container.nameButton:SetAllPoints(container.nameText)
+    -- Hover only, so the row underneath still receives the click
+    if container.nameButton.SetMouseClickEnabled then
+        container.nameButton:SetMouseClickEnabled(false)
+    end
+    container.nameButton:Show()
 
     if container.timeText then
         container.timeText:EnableMouse(false)
@@ -499,6 +565,7 @@ function addon:CreateContainer(parent, yOffset, hasBar, indent)
     if not container.icon then
         container.icon = container:CreateTexture(nil, "OVERLAY")
     end
+    container.icon:ClearAllPoints()
     container.icon:SetSize(hasBar and 10 or 12, hasBar and 10 or 12)
     if hasBar then
         container.icon:SetPoint("BOTTOMRIGHT", container, "TOPRIGHT", -2, -8)
@@ -587,6 +654,9 @@ function addon:UpdateDisplay()
         end
     end
     wipe(self.sections)
+    self.activityRows = self.activityRows or {}
+    wipe(self.activityRows)
+    self.buildID = (self.buildID or 0) + 1
     
     if self.RunModules then
         yOffset = self:RunModules(parent, yOffset) 
@@ -617,11 +687,23 @@ function addon:UpdateDisplay()
 end
 
 function addon:UpdateActivityTimers()
-    if not self.sections then return end
+    if not self.activityRows then return end
     local rr, rg, rb = GetColor("textRight", nil, 1, 1, 1)
-    for _, section in ipairs(self.sections) do
-        if section._activityKey then
+    local build = self.buildID
+    for _, section in ipairs(self.activityRows) do
+        if self.buildID ~= build then return end
+        if section._activityKey and section.timeText and section:IsShown() then
             local timing = self:GetEventTiming(section._activityKey)
+            -- Reading the event can trigger a redraw, which recycles this row
+            if self.buildID ~= build then return end
+            -- The row must still be the activity it was built for
+            local expected = timing and (timing.holidayName or self:GetEventName(section._activityKey))
+            local shown = section.nameText and section.nameText:GetText()
+            if timing and expected and shown and shown ~= expected then
+                print(("|cff4db2ffHomeworkTracker:|r timer leak blocked - row \"%s\" is not \"%s\" (key %s)")
+                    :format(tostring(shown), tostring(expected), tostring(section._activityKey)))
+                timing = nil
+            end
             if timing then
                 if timing.active then
                     section.timeText:SetText("Active - " .. self:FormatTime(timing.remaining))
@@ -639,6 +721,7 @@ end
 function addon:UpdateActivitiesSection(parent, yOffset, expStates)
     local cfg = HomeworkTrackerDB.activities
     if not cfg.activityEnable then return yOffset end
+    self.activityRows = self.activityRows or {}
     
     local hasContent = false
     local startY = yOffset
@@ -648,14 +731,18 @@ function addon:UpdateActivitiesSection(parent, yOffset, expStates)
     
     local events = {}
     for key, event in pairs(addon.eventDB) do
-        if event.expansion and expStates[event.expansion] then
+        if not event.expansion or expStates[event.expansion] then
              if cfg[key] then
                  table.insert(events, {key = key, data = event})
              end
         end
     end
 
-    table.sort(events, function(a, b) 
+    -- Expansion timers first, then world events, each group sorted by name
+    table.sort(events, function(a, b)
+        local aWorld = (a.data.expansion == nil)
+        local bWorld = (b.data.expansion == nil)
+        if aWorld ~= bWorld then return bWorld end
         return self:GetEventName(a.key) < self:GetEventName(b.key)
     end)
     
@@ -668,7 +755,9 @@ function addon:UpdateActivitiesSection(parent, yOffset, expStates)
             hasContent = true
             local bar = self:CreateContainer(parent, yOffset, true)
             bar._activityKey = key
-            bar.nameText:SetText(self:GetEventName(key))
+            table.insert(self.activityRows, bar)
+            -- A shared row, like the weekly bonus rotation, names whichever event is up
+            bar.nameText:SetText(timing.holidayName or self:GetEventName(key))
             bar.icon:Hide()
             
             if timing.active then
@@ -726,11 +815,20 @@ function addon:UpdateGreatVaultSection(parent, yOffset, expStates)
 
     local function mapRewardToIcon(itemLevel)
         if not itemLevel then return 1 end
-        if itemLevel >= 272 then return 5 end
-        if itemLevel >= 259 then return 4 end
-        if itemLevel >= 246 then return 3 end
-        if itemLevel >= 233 then return 2 end
+        if itemLevel >= 318 then return 5 end
+        if itemLevel >= 305 then return 4 end
+        if itemLevel >= 292 then return 3 end
+        if itemLevel >= 279 then return 2 end
         return 1
+    end
+
+    local function ToggleVaultUI()
+        C_AddOns.LoadAddOn("Blizzard_WeeklyRewards")
+        if WeeklyRewardsFrame:IsShown() then
+            HideUIPanel(WeeklyRewardsFrame)
+        else
+            ShowUIPanel(WeeklyRewardsFrame)
+        end
     end
 
     local vaultSlots = {
@@ -748,19 +846,7 @@ function addon:UpdateGreatVaultSection(parent, yOffset, expStates)
             local valueText = ""
             for i = 1, 3 do
                 if i <= #entries and entries[i].progress >= entries[i].threshold then
-                    local entry = entries[i]
-                    local lvl
-                    if entry.itemLevel then
-                        lvl = mapRewardToIcon(entry.itemLevel)
-                    elseif entry.rewardLevel then
-                        lvl = mapRewardToIcon(entry.rewardLevel)
-                    elseif entry.level then
-                        lvl = entry.level
-                    else
-                        lvl = 1
-                    end
-                    if lvl < 1 then lvl = 1 end
-                    if lvl > 5 then lvl = 5 end
+                    local lvl = mapRewardToIcon(entries[i].itemLevel)
                     valueText = valueText .. string.format("|A:Professions-ChatIcon-Quality-Tier%d:18:18::1|a ", lvl)
                 else
                     valueText = valueText .. "|TInterface\\RaidFrame\\ReadyCheck-NotReady:18:18|t "
@@ -769,14 +855,35 @@ function addon:UpdateGreatVaultSection(parent, yOffset, expStates)
             bar.timeText:SetText(valueText)
 
             addon:SetBarColor(bar, r, g, b, 0.8)
-            bar:SetScript("OnMouseDown", function()
-                C_AddOns.LoadAddOn("Blizzard_WeeklyRewards")
-                if WeeklyRewardsFrame:IsShown() then
-                    HideUIPanel(WeeklyRewardsFrame)
-                else
-                    ShowUIPanel(WeeklyRewardsFrame)
+
+            -- Only the marks react, over the full height of the row
+            bar.iconButton:ClearAllPoints()
+            bar.iconButton:SetPoint("TOPRIGHT", bar.timeText, "TOPRIGHT", 0, 0)
+            bar.iconButton:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -16, 0)
+            bar.iconButton:SetWidth(math.max(bar.timeText:GetStringWidth(), 1))
+            bar.iconButton:Show()
+
+            bar.iconButton:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:SetText(slot.label, 1, 1, 1)
+                -- One left-justified line per slot, so the values start at a fixed
+                -- column; a right-hand column would ride on the label's pixel width
+                for i = 1, #entries do
+                    local detail, unlocked = addon:GetGreatVaultSlotDetail(slot.key, entries[i])
+                    if detail then
+                        local color = unlocked and "|cff33ff33" or "|cffff9933"
+                        GameTooltip:AddLine(string.format("Slot %d    %s%s|r", i, color, detail),
+                            0.7, 0.7, 0.7)
+                    end
                 end
+                GameTooltip:AddLine(" ")
+                GameTooltip:AddLine("|cff00ff00Click|r to open the Great Vault", 0.7, 0.7, 0.7, true)
+                GameTooltip:Show()
             end)
+            bar.iconButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+            bar.iconButton:SetScript("OnMouseDown", ToggleVaultUI)
+
+            bar:SetScript("OnMouseDown", ToggleVaultUI)
 
             table.insert(self.sections, bar)
             bar:Show()
@@ -936,6 +1043,62 @@ function addon:UpdateWeeklySection(parent, yOffset, expStates)
 
             if quest.handler and addon.weeklyHandlers and addon.weeklyHandlers[quest.handler] then
                 addon.weeklyHandlers[quest.handler](bar, quest)
+            else
+                local mapID, qx, qy = addon:GetWeeklyLocation(quest)
+                if mapID then
+                    local zoneName = addon:GetMapName(mapID)
+                    -- Inline art, the way the delve rows draw theirs
+                    local bang = "|A:ui-questpoirecurring-questbang:14:14:2:-3|a"
+                    local label = quest.info ~= "" and (quest.info .. " " .. bang) or bang
+                    bar.timeText:SetText(label)
+
+                    bar.iconButton:ClearAllPoints()
+                    bar.iconButton:SetPoint("RIGHT", bar.timeText, "RIGHT", 0, 0)
+                    bar.iconButton:SetSize(16, 16)
+                    -- Sits above the row so the bar cannot swallow the hover
+                    bar.iconButton:SetFrameLevel(bar:GetFrameLevel() + 2)
+                    bar.iconButton:EnableMouse(true)
+                    bar.iconButton:RegisterForClicks("AnyUp")
+                    bar.iconButton:Show()
+
+                    bar.iconButton:SetScript("OnEnter", function(self)
+                        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                        GameTooltip:SetText(quest.name, 1, 1, 1)
+                        if zoneName then GameTooltip:AddLine(zoneName, 1, 1, 1) end
+                        GameTooltip:AddLine(" ")
+                        if qx and qy then
+                            GameTooltip:AddLine(string.format("Coordinates: %.1f, %.1f", qx, qy), 1, 1, 1)
+                        else
+                            GameTooltip:AddLine("No coordinates known", 1, 0.5, 0)
+                        end
+                        GameTooltip:AddLine("|cff00ff00Click|r to open map", 0.7, 0.7, 0.7, true)
+                        if qx and qy then
+                            GameTooltip:AddLine("|cff00ff00Ctrl + Click|r to set waypoint", 0.7, 0.7, 0.7)
+                        end
+                        GameTooltip:Show()
+                    end)
+                    bar.iconButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+                    bar.iconButton:SetScript("OnMouseUp", function(self)
+                        if IsControlKeyDown() and qx and qy then
+                            if TomTom then
+                                local uid = TomTom:AddWaypoint(mapID, qx / 100, qy / 100, {
+                                    title = quest.name,
+                                    persistent = false,
+                                    minimap = true,
+                                    world = true
+                                })
+                                if TomTom.SetCrazyArrow and uid then
+                                    TomTom:SetCrazyArrow(uid, 60, quest.name)
+                                end
+                            elseif addon.SetBlizzardWaypoint then
+                                addon:SetBlizzardWaypoint(mapID, qx, qy)
+                            end
+                        else
+                            addon:OpenWorldMapTo(mapID)
+                        end
+                    end)
+                end
             end
 
             local defaultR, defaultG, defaultB = 0.255, 0.439, 0.929
@@ -1217,22 +1380,10 @@ function addon:UpdateReputationsSection(parent, yOffset, expStates)
         if not hidden[rep.id] then
             local info = self:GetReputationInfo(rep.id)
             if info then
-                local isMaxed = info.isMaxed or (info.isStandard and info.reaction == 8)
+                local isMaxed = not info.isParagon
+                    and (info.isMaxed or (info.isStandard and info.reaction == 8))
 
-                local skipDueToZeroStart = false
-                if not isMaxed and info.renownReputationEarned == 0 then
-                    if info.isRenown then
-                        if (not info.renownLevel) or info.renownLevel <= 1 then
-                            skipDueToZeroStart = true
-                        end
-                    elseif info.isStandard then
-                        if info.isFirstRank then
-                            skipDueToZeroStart = true
-                        end
-                    elseif info.isFriend then
-                        skipDueToZeroStart = true
-                    end
-                end
+                local skipDueToZeroStart = self:IsReputationUnstarted(info, isMaxed)
 
                 if not skipDueToZeroStart and (not cfg.hideComplete or not isMaxed) then
                     hasContent = true
@@ -1255,8 +1406,7 @@ function addon:UpdateReputationsSection(parent, yOffset, expStates)
                     if catID == "delves" then
                         r, g, b = GetColor("delveCompanion", nil, defaultR, defaultG, defaultB)
                     elseif addon.defaultColors and addon.defaultColors.reputations and addon.defaultColors.reputations[rep.id] then
-                        -- Reputation with its own color, registered per faction ID by the DB
-                        -- module. Used when a reputation should not inherit its zone's color.
+                        -- Reputation with its own color, set per faction ID by the DB module
                         r, g, b = GetColor("reputations", rep.id, defaultR, defaultG, defaultB)
                     else
                         r, g, b = GetColor("zones", catID, defaultR, defaultG, defaultB)
@@ -1271,7 +1421,7 @@ function addon:UpdateReputationsSection(parent, yOffset, expStates)
                     
                     local levelDisp = info.label or info.renownLevel or "?"
                     
-                    if isMaxed or (info.isStandard and info.reaction == 8) then
+                    if isMaxed then
                         bar.timeText:SetText(string.format("%s (MAX)", levelDisp))
                     else
                         bar.timeText:SetText(string.format("%s (%d%%)", levelDisp, percent))
@@ -1329,7 +1479,6 @@ function addon:UpdateProgressSection(parent, yOffset, expStates)
             local info = self:GetProgressInfo(prog.id)
 
             -- No info means the faction does not exist for this character yet
-            -- (e.g. a future season's renown track), so there is nothing to show.
             local skipZeroStart = (info == nil)
             if info then
                 if info.isMaxed then
@@ -1467,6 +1616,15 @@ function addon:UpdateRaresSection(parent, yOffset, expStates)
             zcolor = {r, g, b}
             
             addon:SetBarColor(zoneHeader, zcolor[1], zcolor[2], zcolor[3], 0.9)
+            zoneHeader:EnableMouse(true)
+            zoneHeader:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:SetText(zn, 1, 1, 1)
+                GameTooltip:AddLine(expanded and "|cff00ff00Click|r to collapse"
+                    or "|cff00ff00Click|r to expand", 0.7, 0.7, 0.7)
+                GameTooltip:Show()
+            end)
+            zoneHeader:SetScript("OnLeave", function() GameTooltip:Hide() end)
             zoneHeader:SetScript("OnMouseUp", function()
                 addon.expandedZones = addon.expandedZones or {}
                 addon.expandedZones[zn] = not (addon.expandedZones[zn])
@@ -1484,7 +1642,7 @@ function addon:UpdateRaresSection(parent, yOffset, expStates)
                     local bar = self:CreateContainer(parent, yOffset, true, 20)
 
                     bar.nameText:SetText(rare.name)
-                    bar.timeText:SetText("|A:DungeonSkull:14:14|a")
+                    bar.timeText:SetText("|A:DungeonSkull:14:14:2:-3|a")
                     bar.icon:Hide()
 
                     addon:SetBarColor(bar, zcolor[1], zcolor[2], zcolor[3], 0.8)
@@ -1639,10 +1797,7 @@ function addon:UpdateDelvesSection(parent, yOffset, expStates)
                         addon:SetBlizzardWaypoint(mapID, delve.x / 100, delve.y / 100)
                     end
                 else
-                    if mapID and WorldMapFrame and WorldMapFrame.SetMapID then
-                        ShowUIPanel(WorldMapFrame)
-                        WorldMapFrame:SetMapID(mapID)
-                    end
+                    addon:OpenWorldMapTo(mapID)
                 end
             end)
         else

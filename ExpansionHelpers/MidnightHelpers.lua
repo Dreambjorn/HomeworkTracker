@@ -56,10 +56,7 @@ function addon:ConfigureAbundanceDisplay(bar, mapName)
 
     bar.iconButton:SetScript("OnMouseUp", function(self)
         local poiID, uiMapID = addon:GetActiveAbundance()
-        if uiMapID and WorldMapFrame and WorldMapFrame.SetMapID then
-            ShowUIPanel(WorldMapFrame)
-            WorldMapFrame:SetMapID(uiMapID)
-        end
+        addon:OpenWorldMapTo(uiMapID)
     end)
 
     bar.iconButton:SetScript("OnEnter", function(self)

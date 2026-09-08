@@ -3,7 +3,7 @@
 ## IconTexture: 647701
 ## Notes: Tracks various game activities and progress
 ## Author: Dreambjorn
-## Version: 1.7.0
+## Version: 1.8.0
 ## Category: Homework
 ## SavedVariablesPerCharacter: HomeworkTrackerDB
 ## SavedVariables: HomeworkTrackerAccountDB
