@@ -216,7 +216,7 @@ addon:RegisterDatabaseInit("theWarWithin", function()
         { name = "World Boss",
             questType = "single", isWeekend = false, category = "general",
             questID = { 82653, 81653, 81630, 81624 },
-            bossNames = {
+            labels = {
                 [82653] = "Aggregation of Horrors",
                 [81653] = "Shurrai",
                 [81630] = "Kordac",

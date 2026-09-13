@@ -22,7 +22,7 @@ What it tracks:
 
 ---
 
-You can filter by expansion, hide completed sections, toggle categories, change colors, and more. Settings are saved per character.
+You can filter by expansion, hide completed sections, toggle categories, change colors, and more. Profiles are shared account-wide, while each character remembers its active profile.
 
 <img width="744" height="604" alt="image" src="https://github.com/user-attachments/assets/d244171d-7b99-4082-a70f-8ca0f12a5654" />
 
@@ -42,6 +42,8 @@ The tracker can be freely moved by dragging the header. Resize it to fit your UI
 
 - ` /hw ` — Open config  
 - ` /hw toggle ` — Show / hide the tracker
+- ` /hw debug ` — Open tracker diagnostics
+- ` /hw profiling [seconds] ` — Profile CPU and update costs for 5–600 seconds
 ---
 
 ## FAQ

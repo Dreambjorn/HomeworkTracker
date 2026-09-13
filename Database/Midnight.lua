@@ -8,10 +8,16 @@ addon:RegisterDatabaseInit("midnight", function()
         addon.defaults.currency = addon.defaults.currency or { enable = true }
         local currencyDefaults = {
             [3316] =   true,   -- Voidlight Marl
+            [3405] =   false,  -- Field Accolade
+            [267051] = false,  -- Dark Particle
             [3392] =   true,   -- Remnant of Anguish
             [3509] =   true,   -- Tidal Spark Dust
+            [274476] = true,   -- Spark of Tides
             [3465] =   true,   -- Venomblight Manaflux
             [3418] =   true,   -- Nebulous Voidcore
+            [245345] = false,  -- Fused Vitality
+            [264882] = false,  -- Finery Funds
+            [3393] =   false,  -- Illusionary Coin
             [3356] =   false,  -- Untainted Mana-Crystals
             [3379] =   false,  -- Brimming Arcana
             [3376] =   true,   -- Shard of Dundun
@@ -30,6 +36,7 @@ addon:RegisterDatabaseInit("midnight", function()
 
         -- Timed activities
         addon.defaults.activities = addon.defaults.activities or {}
+        addon.defaults.activities.curseSurge = true
         addon.defaults.activities.stormarionAssault = true
     end
 
@@ -123,6 +130,7 @@ addon:RegisterDatabaseInit("midnight", function()
     if addon.defaultColors then
         addon.defaultColors.activities = addon.defaultColors.activities or {}
         local midnightActivityColors = {
+            curseSurge = {0.25, 0.62, 0.45},
             stormarionAssault = {0.45, 0.15, 0.65},
         }
         for k, v in pairs(midnightActivityColors) do
@@ -150,6 +158,22 @@ addon:RegisterDatabaseInit("midnight", function()
 
     -- Event timers
     local midnightEvents = {
+        -- The game schedules one of five Curse Surges every 45 minutes
+        ["curseSurge"] = {
+            ["name"] = "Curse Surge",
+            ["questReq"] = 1,
+            ["questID"] = { 96995 },
+            ["color"] = { 0.25, 0.62, 0.45 },
+            ["schedulerDuration"] = 2700,
+            ["schedulerPoiNames"] = {
+                [8936] = "The Looming Mutagenitor",
+                [8937] = "Siege at the Whispering Marsh",
+                [8938] = "The Broodmother's Nest",
+                [8939] = "Mlurkkr Massacre",
+                [8940] = "The Malformed Leviathan",
+            },
+        },
+
         -- Stormarion Assault (every 30 min)
         ["stormarionAssault"] = {
             ["name"] = { ["enUS"] = "Stormarion Assault" },
@@ -188,12 +212,78 @@ addon:RegisterDatabaseInit("midnight", function()
         { name = "The Tidebound Grotto",        questID = {97128},                   questType = "simple", isWeekend = false, category = "general",    mapID = 2512, x = 60.1, y = 66.4 },
         { name = "Saltheril's Soiree",          questID = {90575,90573,90574,90576}, questType = "single", isWeekend = false, category = "eversong",   mapID = 2395, x = 42.9, y = 46.4 },
         { name = "Abundance",                   questID = {89507},                   questType = "simple", isWeekend = false, category = "zulaman",                                      handler = "abundance" },
-        { name = "Lost Legends",                questID = {89268},                   questType = "simple", isWeekend = false, category = "harandar",   mapID = 2413, x = 54.2, y = 53.0 },
+        { name = "Lost Legends",                questID = {89268,92713},             questType = "single", isWeekend = false, category = "harandar",   mapID = 2413, x = 54.2, y = 53.0 }, -- 92713 replaces it after Legends Never Die
         { name = "Stormarion Assault",          questID = {90962},                   questType = "simple", isWeekend = false, category = "voidstorm",  mapID = 2405, x = 27.3, y = 68.0 },
         { name = "Stand Your Ground",           questID = {94581},                   questType = "simple", isWeekend = false, category = "voidstorm",  mapID = 2405, x = 27.3, y = 68.0 },
         { name = "Preparing for Battle",        questID = {89354},                   questType = "simple", isWeekend = false, category = "voidstorm",  mapID = 2444, x = 38.8, y = 81.4 },
         { name = "Turn Back the Surge",         questID = {96995},                   questType = "simple", isWeekend = false, category = "coiledisle", mapID = 2512, x = 58.6, y = 45.8 },
         { name = "Purging the Vaults",          questID = {95520},                   questType = "simple", isWeekend = false, category = "coiledisle", mapID = 2509, x = 47.3, y = 63.3 },
+        { name = "Unity Against the Void",      questID = {93744},                   questType = "simple", isWeekend = false, category = "general",    mapID = 2393, x = 49.0, y = 64.6 },
+        {
+            name = "Bonus Event Quest", questType = "single", isWeekend = false, category = "general", mapID = 2393, x = 48.8, y = 64.6,
+            questID = { 93595, 93593, 93598, 93599, 93600, 93605,
+                        93607, 93608, 93610, 93611, 93612, 93613, 93614, 93627, 93628, 93497 },
+            labels = {
+                [93595] = "Delves",
+                [93593] = "Battlegrounds",
+                [93598] = "Dungeons",
+                [93599] = "Pet Battles",
+                [93600] = "Arena Skirmishes",
+                [93605] = "World Quests",
+                [93607] = "Timewalking: Classic",
+                [93608] = "Timewalking: Burning Crusade",
+                [93610] = "Timewalking: Wrath of the Lich King",
+                [93611] = "Timewalking: Cataclysm",
+                [93612] = "Timewalking: Mists of Pandaria",
+                [93613] = "Timewalking: Warlords of Draenor",
+                [93614] = "Timewalking: Legion",
+                [93627] = "Timewalking: Battle for Azeroth",
+                [93628] = "Timewalking: Shadowlands",
+                [93497] = "Timewalking: Dragonflight",
+            },
+        },
+        {
+            name = "Weekly Dungeon", questType = "single", isWeekend = false, category = "general", mapID = 2393, x = 49.0, y = 64.8,
+            questID = { 93751, 93752, 93753, 93754, 93755, 93756, 93757, 93758 },
+            labels = {
+                [93751] = "Windrunner Spire",
+                [93752] = "Murder Row",
+                [93753] = "Magisters' Terrace",
+                [93754] = "Maisara Caverns",
+                [93755] = "Den of Nalorakk",
+                [93756] = "The Blinding Vale",
+                [93757] = "Voidscar Arena",
+                [93758] = "Nexus-Point Xenas",
+            },
+        },
+        {
+            name = "World Boss", questType = "single", isWeekend = false, category = "general",
+            questID = { 92560, 92123, 92034, 92636 },
+            labels = {
+                [92560] = "Lu'ashal",
+                [92123] = "Cragpine",
+                [92034] = "Thorm'belan",
+                [92636] = "Predaxas",
+            },
+            locations = {
+                [92560] = { mapID = 2395, x = 45.2, y = 60.0 },
+                [92123] = { mapID = 2437, x = 45.2, y = 47.9 },
+                [92034] = { mapID = 2413, x = 39.0, y = 66.9 },
+                [92636] = { mapID = 2405, x = 49.1, y = 86.5 },
+            },
+        },
+        {
+            name = "Housing Weekly", questType = "single", accountWide = true, isWeekend = false, category = "general", mapID = 2393, x = 49.4, y = 65.8,
+            questID = { 95413, 95416, 95438, 95440 },
+            labels = {
+                [95413] = "Community Engagement",
+                [95416] = "Going Postal",
+                [95438] = "Lost Animals",
+                [95440] = "Housewarming",
+            },
+        },
+        { name = "Trailing Xal'atath",          questID = {98172},                   questType = "simple", isWeekend = false, category = "general",    mapID = 2393, x = 49.0, y = 64.6 },
+        { name = "Void Assaults",               questID = {94385,94386},             questType = "single", isWeekend = false, category = "general",    mapID = 2393, x = 48.0, y = 49.6 },
         { name = "A Gnawing Void of Curiosity", questID = {93784},                   questType = "simple", isWeekend = false, category = "delves" },
         { name = "Trovehunter's Bounty",        questID = {86371},                   questType = "simple", isWeekend = false, category = "delves" },
     }
@@ -342,10 +432,16 @@ addon:RegisterDatabaseInit("midnight", function()
     local midnightCurrencies = {
         -- General
         { name = "Voidlight Marl",          id = 3316,   icon = 7137586 },
+        { name = "Field Accolade",          id = 3405,   icon = 2459456 },
+        { name = "Dark Particle",           id = 267051, icon = 4914669, isItem = true },
         { name = "Remnant of Anguish",      id = 3392,   icon = 4554435 },
         { name = "Tidal Spark Dust",        id = 3509,   icon = 5929576 },
+        { name = "Spark of Tides",          id = 274476, icon = 7551419, isItem = true },
         { name = "Venomblight Manaflux",    id = 3465,   icon = 4622293 },
         { name = "Nebulous Voidcore",       id = 3418,   icon = 7658129 },
+        { name = "Fused Vitality",          id = 245345, icon = 237556,  isItem = true },
+        { name = "Finery Funds",            id = 264882, icon = 6255014, isItem = true },
+        { name = "Illusionary Coin",        id = 3393,   icon = 1717106 },
         { name = "Untainted Mana-Crystals", id = 3356,   icon = 132849 },
 
         -- Eversong Wood

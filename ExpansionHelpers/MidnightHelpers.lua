@@ -47,15 +47,12 @@ function addon:ConfigureAbundanceDisplay(bar, mapName)
             local newX = xOff - 1
             bar.timeText:ClearAllPoints()
             bar.timeText:SetPoint(p or "RIGHT", rel or bar, rp or "RIGHT", newX, yOff or 0)
-        else
-            bar.timeText:ClearAllPoints()
-            bar.timeText:SetPoint("RIGHT", bar, "RIGHT", 0, 0)
         end
     end
     bar.iconButton:SetPoint("RIGHT", bar.timeText, "RIGHT", 0, 0)
 
     bar.iconButton:SetScript("OnMouseUp", function(self)
-        local poiID, uiMapID = addon:GetActiveAbundance()
+        local _, uiMapID = addon:GetActiveAbundance()
         addon:OpenWorldMapTo(uiMapID)
     end)
 

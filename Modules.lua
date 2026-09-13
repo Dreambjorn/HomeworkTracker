@@ -1,14 +1,6 @@
 -- HomeworkTracker - Modules
 local addonName, addon = ...
 
--- Check if expansion is active
-local function IsExpEnabled(key)
-    if not key then return true end
-    if not HomeworkTrackerDB.expansions then return true end
-    if HomeworkTrackerDB.expansions[key] == nil then return true end
-    return HomeworkTrackerDB.expansions[key]
-end
-
 -- Define logic modules in display order
 addon.modules = {
     { name = "Activities",      func = "UpdateActivitiesSection" },
@@ -23,7 +15,7 @@ addon.modules = {
 }
 
 -- Run ordered progression of tracker modules
-function addon:RunModules(parent, yOffset)
+function addon:RunModules(parent, yOffset, dirty)
     local currentMapID = C_Map.GetBestMapForUnit("player")
     local activeExpansions = {}
     
@@ -31,7 +23,7 @@ function addon:RunModules(parent, yOffset)
         for expKey, mapList in pairs(addon.expansionMapIDs) do
             activeExpansions[expKey] = false
             local tempMapID = currentMapID
-            for i=1, 5 do
+            for _=1, 5 do
                 if not tempMapID then break end
                 if mapList[tempMapID] then
                     activeExpansions[expKey] = true
@@ -66,9 +58,56 @@ function addon:RunModules(parent, yOffset)
         end
     end
 
+    -- Profiling: /hw profiling wants to know what each section costs
+    local prof = addon._profile
+    self.sectionRows = self.sectionRows or {}
+    self.sectionEndY = self.sectionEndY or {}
+
+    -- A partial pass refills the flat list from what each section owns
+    if dirty then wipe(self.sections) end
+
     for _, mod in ipairs(self.modules) do
         if self[mod.func] then
-            yOffset = self[mod.func](self, parent, yOffset, expStates)
+            local name = mod.name
+            local rows = self.sectionRows[name]
+
+            if dirty and not dirty[name] and self.sectionEndY[name] then
+                -- This event cannot have changed the section, so leave its rows alone
+                for i = 1, (rows and #rows or 0) do self.sections[#self.sections + 1] = rows[i] end
+                yOffset = self.sectionEndY[name]
+            else
+                if dirty and rows then
+                    for i = 1, #rows do addon.ReleaseContainer(rows[i]) end
+                end
+
+                local first = #self.sections + 1
+                local previousEnd = self.sectionEndY[name]
+                local t0 = prof and debugprofilestop() or nil
+
+                yOffset = self[mod.func](self, parent, yOffset, expStates)
+
+                -- Remember which rows this section owns, so it can be redrawn on its own
+                if rows then wipe(rows) else rows = {}; self.sectionRows[name] = rows end
+                for i = first, #self.sections do rows[#rows + 1] = self.sections[i] end
+                self.sectionEndY[name] = yOffset
+
+                if t0 then
+                    prof.bySection[name] = (prof.bySection[name] or 0) + (debugprofilestop() - t0)
+                    prof.bySectionRows[name] = #rows
+                end
+
+                -- Section changed height, so rows below moved: caller must start over
+                if dirty and previousEnd and previousEnd ~= yOffset then
+                    wipe(self.sections)
+                    for _, other in ipairs(self.modules) do
+                        local ownd = self.sectionRows[other.name]
+                        for i = 1, (ownd and #ownd or 0) do
+                            self.sections[#self.sections + 1] = ownd[i]
+                        end
+                    end
+                    return nil
+                end
+            end
         end
     end
     

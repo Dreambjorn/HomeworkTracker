@@ -1,4 +1,4 @@
-﻿-- HomeworkTracker - Config
+-- HomeworkTracker - Config
 local addonName, addon = ...
 
 
@@ -19,7 +19,6 @@ local COLOR_BG = {0.1, 0.1, 0.1, 0.95}
 local COLOR_Sidebar = {0.15, 0.15, 0.15, 1}
 local COLOR_Selected = {0.2, 0.4, 0.8, 1}
 local COLOR_Hover = {0.2, 0.2, 0.2, 1}
-local COLOR_Text = {1, 1, 1, 1}
 local COLOR_Header = {1, 0.82, 0, 1}
 
 -- Default colors
@@ -36,39 +35,74 @@ local sidebar
 local tabs
 local dropdownLists = {}
 local settingsCanvas = CreateFrame("Frame")
-local settingsCategory = nil
+local settingsCategory
 local floatingSidebar, floatingContentFrame, floatingConfigFrame
 local canvasSidebar, canvasContentFrame
 local canvasBuilt = false
 
+-- Close the open list on a click outside it
+local dropdownCloser = CreateFrame("Frame")
+dropdownCloser:SetScript("OnEvent", function(self, event, mouseButton)
+    local list = self.list
+    if not (list and list:IsShown()) then
+        self.list = nil
+        self:UnregisterEvent("GLOBAL_MOUSE_DOWN")
+        return
+    end
+    if mouseButton ~= "LeftButton" and mouseButton ~= "RightButton" then return end
+    if list:IsMouseOver() or (list.ownerButton and list.ownerButton:IsMouseOver()) then return end
+    list:Hide()
+end)
+
+-- Hide every tracked list except one
+local function CloseDropdowns(except)
+    for _, l in ipairs(dropdownLists) do
+        if l ~= except and l:IsShown() then l:Hide() end
+    end
+end
+
+-- Profile popups sit on UIParent, so close them with their host
+local function CloseConfigPopups()
+    if addon.profileCodePopup then addon.profileCodePopup:Hide() end
+    if addon.profileNamePopup then addon.profileNamePopup:Hide() end
+end
+
+-- Open one list, close the rest
+local function OpenDropdown(list)
+    CloseDropdowns(list)
+    list:Show()
+    dropdownCloser.list = list
+    dropdownCloser:RegisterEvent("GLOBAL_MOUSE_DOWN")
+end
+
 -- Track dropdown lists
-local function TrackDropdown(list)
+local function TrackDropdown(list, button)
     if not list then return end
+    list.ownerButton = button
     table.insert(dropdownLists, list)
     list:HookScript("OnHide", function(self)
-        for i, v in ipairs(dropdownLists) do
-            if v == self then
-                table.remove(dropdownLists, i)
-                break
-            end
+        if dropdownCloser.list == self then
+            dropdownCloser.list = nil
+            dropdownCloser:UnregisterEvent("GLOBAL_MOUSE_DOWN")
         end
     end)
 end
 
 -- Setup dropdown frames
-local function SetupDropdown(button, list, countFunc)
-    TrackDropdown(list)
+local function SetupDropdown(button, list, countFunc, onOpen)
+    TrackDropdown(list, button)
 
     list:SetFrameLevel(100)
     list:SetFrameStrata("DIALOG")
 
     button:SetScript("OnClick", function()
-        if countFunc and countFunc() == 0 then return end
         if list:IsShown() then
             list:Hide()
-        else
-            list:Show()
+            return
         end
+        if onOpen then onOpen() end
+        if countFunc and countFunc() == 0 then return end
+        OpenDropdown(list)
     end)
 end
 
@@ -90,25 +124,69 @@ local function CreateBaseFrame(name, parent)
     return f
 end
 
+-- Reuse widgets within their own tab and host
+local function TakeWidget(parent, key, kind, template)
+    local pools = parent and parent.configPools
+    local pool
+    if pools then
+        pool = pools[key]
+        if not pool then
+            pool = { used = 0 }
+            pools[key] = pool
+        end
+        pool.used = pool.used + 1
+        local widget = pool[pool.used]
+        if widget then
+            widget:Show()
+            return widget, false
+        end
+    end
+    local widget
+    if kind == "FontString" then
+        widget = parent:CreateFontString(nil, "OVERLAY", template)
+    else
+        widget = CreateFrame(kind, nil, parent, template)
+    end
+    if pool then pool[pool.used] = widget end
+    return widget, true
+end
+
+-- Raw headings and buttons also keep their regions
+local function CreateTabFrame(parent, key, kind, template)
+    local frame = TakeWidget(parent, key, kind, template)
+    frame.configPools = frame.configPools or {}
+    return frame
+end
+
+local function CreateTabLabel(parent, key, template)
+    return TakeWidget(parent, key, "FontString", template)
+end
+
 -- Create checkbox
 local function CreateCheckbox(parent, label, onClick)
-    local frame = CreateFrame("Frame", nil, parent)
-    frame:SetSize(400, 26)
+    local frame, isNew = TakeWidget(parent, "checkbox", "Frame")
+    local check, text = frame.check, frame.label
+    if isNew then
+        frame:SetSize(400, 26)
     
-    local check = CreateFrame("CheckButton", nil, frame)
-    check:SetSize(20, 20)
-    check:SetPoint("LEFT", 0, 0)
-    check:SetNormalTexture("Interface\\Buttons\\UI-CheckBox-Up")
-    check:SetPushedTexture("Interface\\Buttons\\UI-CheckBox-Down")
-    check:SetHighlightTexture("Interface\\Buttons\\UI-CheckBox-Highlight")
-    check:SetCheckedTexture("Interface\\Buttons\\UI-CheckBox-Check")
+        check = CreateFrame("CheckButton", nil, frame)
+        check:SetSize(20, 20)
+        check:SetPoint("LEFT", 0, 0)
+        check:SetNormalTexture("Interface\\Buttons\\UI-CheckBox-Up")
+        check:SetPushedTexture("Interface\\Buttons\\UI-CheckBox-Down")
+        check:SetHighlightTexture("Interface\\Buttons\\UI-CheckBox-Highlight")
+        check:SetCheckedTexture("Interface\\Buttons\\UI-CheckBox-Check")
     
-    local text = frame:CreateFontString(nil, "OVERLAY")
-    text:SetPoint("LEFT", check, "RIGHT", 8, 0)
-    SetConfigFont(text, 12)
-    text:SetText(label)
-    text:SetTextColor(0.9, 0.9, 0.9)
-    
+        text = frame:CreateFontString(nil, "OVERLAY")
+        text:SetPoint("LEFT", check, "RIGHT", 8, 0)
+        SetConfigFont(text, 12)
+        text:SetText(label)
+        text:SetTextColor(0.9, 0.9, 0.9)
+    else
+        text:SetText(label)
+    end
+    frame.configResetHover = true
+
     check:SetScript("OnClick", function(self)
         if onClick then onClick(self:GetChecked()) end
     end)
@@ -120,34 +198,44 @@ end
 
 -- Create slider
 local function CreateSlider(parent, label, minVal, maxVal, step, onValueChanged)
-    local frame = CreateFrame("Frame", nil, parent)
-    frame:SetSize(400, 45)
+    local frame, isNew = TakeWidget(parent, "slider", "Frame")
+    local slider, text, valueText = frame.slider, frame.label, frame.valueText
+    if isNew then
+        frame:SetSize(400, 45)
     
-    local slider = CreateFrame("Slider", nil, frame, "OptionsSliderTemplate")
-    slider:SetPoint("LEFT", 0, -10)
-    slider:SetWidth(200)
-    slider:SetMinMaxValues(minVal, maxVal)
-    slider:SetValueStep(step)
-    slider:SetObeyStepOnDrag(true)
+        slider = CreateFrame("Slider", nil, frame, "OptionsSliderTemplate")
+        slider:SetPoint("LEFT", 0, -10)
+        slider:SetWidth(200)
+        slider:SetMinMaxValues(minVal, maxVal)
+        slider:SetValueStep(step)
+        slider:SetObeyStepOnDrag(true)
     
-    if slider.Low then slider.Low:SetText("Small") end
-    if slider.High then slider.High:SetText("Big") end
+        if slider.Low then slider.Low:SetText("Small") end
+        if slider.High then slider.High:SetText("Big") end
     
-    local text = frame:CreateFontString(nil, "OVERLAY")
-    text:SetPoint("BOTTOMLEFT", slider, "TOPLEFT", 0, 5)
-    SetConfigFont(text, 12)
-    text:SetText(label)
+        text = frame:CreateFontString(nil, "OVERLAY")
+        text:SetPoint("BOTTOMLEFT", slider, "TOPLEFT", 0, 5)
+        SetConfigFont(text, 12)
+        text:SetText(label)
     
-    local valueText = frame:CreateFontString(nil, "OVERLAY")
-    valueText:SetPoint("BOTTOMRIGHT", slider, "TOPRIGHT", 0, 5)
-    SetConfigFont(valueText, 12)
+        valueText = frame:CreateFontString(nil, "OVERLAY")
+        valueText:SetPoint("BOTTOMRIGHT", slider, "TOPRIGHT", 0, 5)
+        SetConfigFont(valueText, 12)
     
+    else
+        slider:SetScript("OnValueChanged", nil)
+        slider:SetMinMaxValues(minVal, maxVal)
+        slider:SetValueStep(step)
+        text:SetText(label)
+    end
+
     slider:SetScript("OnValueChanged", function(self, value)
         local fmt = (step < 1) and "%.1f" or "%d"
         valueText:SetText(string.format(fmt, value))
         if onValueChanged then onValueChanged(value) end
     end)
     
+    frame.label = text
     frame.slider = slider
     frame.valueText = valueText
     return frame
@@ -155,7 +243,11 @@ end
 
 -- Create header
 local function CreateHeader(parent, text)
-    local frame = CreateFrame("Frame", nil, parent)
+    local frame, isNew = TakeWidget(parent, "header", "Frame")
+    if not isNew then
+        frame.label:SetText(text)
+        return frame
+    end
     frame:SetSize(400, 30)
     
     local label = frame:CreateFontString(nil, "OVERLAY")
@@ -170,13 +262,14 @@ local function CreateHeader(parent, text)
     line:SetHeight(1)
     line:SetPoint("BOTTOMLEFT", label, "BOTTOMLEFT", 0, -2)
     line:SetPoint("RIGHT", frame, "RIGHT", 0, 0)
+    frame.label = label
     
     return frame
 end
 
 
 local function CreateResetButton(parent, onClick)
-    local btn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    local btn = TakeWidget(parent, "reset", "Button", "UIPanelButtonTemplate")
     btn:SetSize(160, 26)
     btn:SetText("Reset to Defaults")
     btn:SetScript("OnClick", function() 
@@ -196,7 +289,12 @@ end
 
 -- Create text input
 local function CreateTextInput(parent, width, height, multiline)
-    local eb = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
+    local eb, isNew = TakeWidget(parent, "input", "EditBox", "BackdropTemplate")
+    if not isNew then
+        eb:ClearFocus()
+        eb:SetText("")
+        return eb
+    end
     eb:SetSize(width or 240, height or 24)
     eb:SetAutoFocus(false)
     eb:SetMultiLine(multiline or false)
@@ -217,49 +315,76 @@ local function CreateTextInput(parent, width, height, multiline)
     return eb
 end
 
--- Create simple dropdown
-local function CreateSimpleDropdown(parent, labelText, width)
-    local frame = CreateFrame("Frame", nil, parent)
-    frame:SetSize((width or 220), 46)
-
-    local label = frame:CreateFontString(nil, "OVERLAY")
-    label:SetPoint("TOPLEFT", 0, 0)
-    SetConfigFont(label, 12)
-    label:SetText(labelText or "")
-
-    local button = CreateFrame("Button", nil, frame, "BackdropTemplate")
-    button:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -4)
-    button:SetSize(width or 220, 24)
-    button:SetBackdrop({
+-- Shared dropdown backdrop
+local function DropdownBackdrop(edge)
+    return {
         bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 12,
+        edgeSize = edge,
         insets = {left=2, right=2, top=2, bottom=2}
-    })
+    }
+end
+
+-- Style a placed dropdown button
+local function StyleDropdownButton(button, edge, text)
+    button:SetBackdrop(DropdownBackdrop(edge))
     button:SetBackdropColor(0, 0, 0, 0.8)
 
     local btnText = button:CreateFontString(nil, "OVERLAY")
     btnText:SetPoint("LEFT", 8, 0)
     SetConfigFont(btnText, 12)
-    btnText:SetText("Select")
+    if text then btnText:SetText(text) end
 
     local arrow = button:CreateTexture(nil, "ARTWORK")
     arrow:SetPoint("RIGHT", -6, 0)
     arrow:SetSize(12, 12)
     arrow:SetTexture("Interface\\ChatFrame\\ChatFrameExpandArrow")
 
+    return btnText
+end
+
+-- Hidden list box under a dropdown button
+local function CreateDropdownList(frame, button, width, height, edge, shade)
     local list = CreateFrame("Frame", nil, frame, "BackdropTemplate")
     list:SetPoint("TOPLEFT", button, "BOTTOMLEFT", 0, -2)
-    list:SetSize(width or 220, 10)
-    list:SetBackdrop({
-        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 12,
-        insets = {left=2, right=2, top=2, bottom=2}
-    })
-    list:SetBackdropColor(0.08, 0.08, 0.08, 0.98)
-    list:SetFrameStrata("TOOLTIP")
+    list:SetSize(width, height)
+    list:SetBackdrop(DropdownBackdrop(edge))
+    list:SetBackdropColor(shade, shade, shade, 0.98)
     list:Hide()
+    return list
+end
+
+-- Option dropdown; compact is the header style
+local function CreateListDropdown(parent, labelText, width, compact)
+    local edge = compact and 8 or 12
+
+    local frame, isNew = TakeWidget(parent, compact and "headerDropdown" or "listDropdown", "Frame")
+    if not isNew then
+        frame:SetOnChange(nil)
+        frame:SetValue(nil)
+        if frame.label then frame.label:SetText(labelText or "") end
+        return frame
+    end
+    frame:SetSize(width, compact and 20 or 46)
+
+    local button
+    if compact then
+        button = CreateFrame("Button", nil, frame, "BackdropTemplate")
+        button:SetAllPoints()
+    else
+        local label = frame:CreateFontString(nil, "OVERLAY")
+        label:SetPoint("TOPLEFT", 0, 0)
+        SetConfigFont(label, 12)
+        label:SetText(labelText or "")
+        frame.label = label
+
+        button = CreateFrame("Button", nil, frame, "BackdropTemplate")
+        button:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -4)
+        button:SetSize(width, 24)
+    end
+
+    local btnText = StyleDropdownButton(button, edge, "Select")
+    local list = CreateDropdownList(frame, button, width, 10, edge, 0.08)
 
     local optionButtons = {}
     local options = {}
@@ -278,14 +403,17 @@ local function CreateSimpleDropdown(parent, labelText, width)
     local function SetOptions(newOptions)
         options = newOptions or {}
 
-        for _, b in ipairs(optionButtons) do b:Hide() end
+        for _, b in ipairs(optionButtons) do
+            b:Hide()
+            if b.bg then b.bg:Hide() end
+        end
 
         local y = -4
         for i, opt in ipairs(options) do
             local b = optionButtons[i]
             if not b then
                 b = CreateFrame("Button", nil, list)
-                b:SetSize((width or 220) - 8, 20)
+                b:SetSize(width - 8, 20)
                 b.text = b:CreateFontString(nil, "OVERLAY")
                 b.text:SetPoint("LEFT", 5, 0)
                 SetConfigFont(b.text, 12)
@@ -310,14 +438,10 @@ local function CreateSimpleDropdown(parent, labelText, width)
 
         list:SetHeight(math.max(12, math.abs(y) + 4))
 
-        local keep = false
-        for _, opt in ipairs(options) do
-            if opt == selected then keep = true break end
-        end
-        if not keep then
-            Select(options[1], false)
-        else
+        if tContains(options, selected) then
             btnText:SetText(selected)
+        else
+            Select(options[1], false)
         end
     end
 
@@ -329,327 +453,184 @@ local function CreateSimpleDropdown(parent, labelText, width)
     frame.SetOnChange = function(self, cb) onChange = cb end
     frame.Close = function(self) list:Hide() end
 
-    list:HookScript("OnHide", function()
-        list:SetParent(frame)
-    end)
-
     return frame
+end
+
+-- Create simple dropdown
+local function CreateSimpleDropdown(parent, labelText, width)
+    return CreateListDropdown(parent, labelText, width or 220, false)
 end
 
 -- Create condensed dropdown
 local function CreateHeaderDropdown(parent, width)
-    local frame = CreateFrame("Frame", nil, parent)
-    frame:SetSize(width or 180, 20)
-
-    local button = CreateFrame("Button", nil, frame, "BackdropTemplate")
-    button:SetAllPoints()
-    button:SetBackdrop({
-        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 8,
-        insets = {left=2, right=2, top=2, bottom=2}
-    })
-    button:SetBackdropColor(0, 0, 0, 0.8)
-
-    local btnText = button:CreateFontString(nil, "OVERLAY")
-    btnText:SetPoint("LEFT", 8, 0)
-    SetConfigFont(btnText, 12)
-    btnText:SetText("Select")
-
-    local arrow = button:CreateTexture(nil, "ARTWORK")
-    arrow:SetPoint("RIGHT", -6, 0)
-    arrow:SetSize(12, 12)
-    arrow:SetTexture("Interface\\ChatFrame\\ChatFrameExpandArrow")
-
-    local list = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-    list:SetPoint("TOPLEFT", button, "BOTTOMLEFT", 0, -2)
-    list:SetSize(width or 180, 10)
-    list:SetBackdrop({
-        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 8,
-        insets = {left=2, right=2, top=2, bottom=2}
-    })
-    list:SetBackdropColor(0.08, 0.08, 0.08, 0.98)
-    list:Hide()
-
-    local optionButtons = {}
-    local options = {}
-    local selected
-    local onChange
-
-    SetupDropdown(button, list, function() return #options end)
-
-    local function Select(val, fireOnChange)
-        selected = val
-        btnText:SetText(val or "Select")
-        list:Hide()
-        if fireOnChange and onChange then onChange(val) end
-    end
-
-    local function SetOptions(newOptions)
-        options = newOptions or {}
-        for _, b in ipairs(optionButtons) do b:Hide() end
-        local y = -4
-        for i, opt in ipairs(options) do
-            local b = optionButtons[i]
-            if not b then
-                b = CreateFrame("Button", nil, list)
-                b:SetSize((width or 180) - 8, 20)
-                b.text = b:CreateFontString(nil, "OVERLAY")
-                b.text:SetPoint("LEFT", 5, 0)
-                SetConfigFont(b.text, 12)
-                b:SetScript("OnEnter", function(self)
-                    self.bg = self.bg or self:CreateTexture(nil, "BACKGROUND")
-                    self.bg:SetAllPoints()
-                    self.bg:SetColorTexture(0.2, 0.2, 0.2, 0.45)
-                    self.bg:Show()
-                end)
-                b:SetScript("OnLeave", function(self)
-                    if self.bg then self.bg:Hide() end
-                end)
-                optionButtons[i] = b
-            end
-            b:SetPoint("TOPLEFT", 4, y)
-            b.text:SetText(opt)
-            b:SetScript("OnClick", function() Select(opt, true) end)
-            b:Show()
-            y = y - SMALL_GAP - 4
-        end
-        list:SetHeight(math.max(12, math.abs(y) + 4))
-        if not tContains(options, selected) then Select(options[1], false) end
-    end
-
-
-    frame.SetOptions = function(self, opts) SetOptions(opts) end
-    frame.SetValue = function(self, val) Select(val, false) end
-    frame.GetValue = function(self) return selected end
-    frame.SetOnChange = function(self, cb) onChange = cb end
-    frame.Close = function(self) list:Hide() end
-
-    return frame
+    return CreateListDropdown(parent, nil, width or 180, true)
 end
 
--- Create font dropdown
-local function CreateFontDropdown(parent, labelText, dbKey, onChange)
-    local frame = CreateFrame("Frame", nil, parent)
+-- Scroll row hover
+local function ScrollRowOnEnter(self)
+    self.bg = self.bg or self:CreateTexture(nil, "BACKGROUND")
+    self.bg:SetAllPoints()
+    self.bg:SetColorTexture(0.2, 0.2, 0.2, 0.5)
+    self.bg:Show()
+end
+
+local function ScrollRowOnLeave(self)
+    if self.bg then self.bg:Hide() end
+end
+
+-- Dropdown whose list builds only visible rows
+local function CreateScrollDropdown(parent, labelText, initRow, onPick, frame)
+    frame = frame or CreateFrame("Frame", nil, parent)
     frame:SetSize(250, 45)
-    
+
     local label = frame:CreateFontString(nil, "OVERLAY")
     label:SetPoint("TOPLEFT", 0, 0)
     SetConfigFont(label, 12)
     label:SetText(labelText)
-    
+
     local button = CreateFrame("Button", nil, frame, "BackdropTemplate")
     button:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -5)
     button:SetSize(220, 24)
-    button:SetBackdrop({
-        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 12,
-        insets = {left=2, right=2, top=2, bottom=2}
-    })
-    button:SetBackdropColor(0, 0, 0, 0.8)
-    
-    local btnText = button:CreateFontString(nil, "OVERLAY")
-    btnText:SetPoint("LEFT", 8, 0)
-    SetConfigFont(btnText, 12)
-    button.text = btnText
-    
-    local arrow = button:CreateTexture(nil, "ARTWORK")
-    arrow:SetPoint("RIGHT", -6, 0)
-    arrow:SetSize(12, 12)
-    arrow:SetTexture("Interface\\ChatFrame\\ChatFrameExpandArrow")
-    
-    local list = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-    list:SetPoint("TOPLEFT", button, "BOTTOMLEFT", 0, -2)
-    list:SetSize(220, 150)
-    list:SetBackdrop({
-        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 12,
-        insets = {left=2, right=2, top=2, bottom=2}
-    })
-    list:SetBackdropColor(0.1, 0.1, 0.1, 0.98)
-    list:SetFrameStrata("TOOLTIP")
-    list:Hide()
-    
-    local scroll = CreateFrame("ScrollFrame", nil, list, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", 4, -4)
-    scroll:SetPoint("BOTTOMRIGHT", -24, 4)
-    
-    local content = CreateFrame("Frame", nil, scroll)
-    content:SetSize(190, 100)
-    scroll:SetScrollChild(content)
-    
-    local fonts = {}
-    if LSM then
-        fonts = LSM:List("font")
-    else
-        fonts = {"Friz Quadrata TT", "Arial Narrow", "Skurri"}
-    end
-    table.sort(fonts)
-    
-    SetupDropdown(button, list, function() return #fonts end)
 
-    local y = 0
-    for _, fontName in ipairs(fonts) do
-        local b = CreateFrame("Button", nil, content)
-        b:SetSize(190, 20)
-        b:SetPoint("TOPLEFT", 0, y)
-        
-        local t = b:CreateFontString(nil, "OVERLAY")
-        t:SetPoint("LEFT", 5, 0)
+    local btnText = StyleDropdownButton(button, 12)
+    local list = CreateDropdownList(frame, button, 220, 150, 12, 0.1)
 
-        if LSM then
-            local p = LSM:Fetch("font", fontName)
-            t:SetFont(p, 12)
-        else
-            t:SetFont(CONFIG_FONT_PATH, 12)
+    local scrollBox = CreateFrame("Frame", nil, list, "WowScrollBoxList")
+    scrollBox:SetPoint("TOPLEFT", 4, -4)
+    scrollBox:SetPoint("BOTTOMRIGHT", -18, 4)
+
+    local scrollBar = CreateFrame("EventFrame", nil, list, "MinimalScrollBar")
+    scrollBar:SetPoint("TOPLEFT", scrollBox, "TOPRIGHT", 4, 0)
+    scrollBar:SetPoint("BOTTOMLEFT", scrollBox, "BOTTOMRIGHT", 4, 0)
+
+    local view = CreateScrollBoxListLinearView()
+    view:SetElementExtent(SMALL_GAP + 4)
+    view:SetElementInitializer("Button", function(row, data)
+        if not row.text then
+            row.text = row:CreateFontString(nil, "OVERLAY")
+            row.text:SetPoint("LEFT", 5, 0)
+            SetConfigFont(row.text, 12)
+            row:SetScript("OnEnter", ScrollRowOnEnter)
+            row:SetScript("OnLeave", ScrollRowOnLeave)
+            row:SetScript("OnClick", function(self)
+                btnText:SetText(self.value)
+                list:Hide()
+                onPick(self.value)
+            end)
         end
-        t:SetText(fontName)
-        t:SetTextColor(1, 1, 1)
-        
-        b:SetScript("OnClick", function()
-            if onChange then onChange(fontName) end
-            btnText:SetText(fontName)
-            list:Hide()
-        end)
-        
-        b:SetScript("OnEnter", function(self)
-            local bg = self:CreateTexture(nil, "BACKGROUND")
-            bg:SetAllPoints()
-            bg:SetColorTexture(0.2, 0.2, 0.2, 0.5)
-            self.bg = bg
-        end)
-        b:SetScript("OnLeave", function(self)
-            if self.bg then self.bg:Hide() end
-        end)
-        
-        y = y - SMALL_GAP - 4
+        row.value = data.name
+        initRow(row, data.name)
+    end)
+    ScrollUtil.InitScrollBoxListWithScrollBar(scrollBox, scrollBar, view)
+
+    return frame, button, list, scrollBox, btnText
+end
+
+-- Fill a scroll list
+local function SetScrollItems(scrollBox, names)
+    local dp = CreateDataProvider()
+    for _, n in ipairs(names) do dp:Insert({ name = n }) end
+    scrollBox:SetDataProvider(dp)
+end
+
+-- Create font dropdown
+local function CreateFontDropdown(parent, labelText, onChange)
+    local widget, isNew = TakeWidget(parent, "fontDropdown", "Frame")
+    widget.onChange = onChange
+    if not isNew then return widget end
+    -- Row shows its own font
+    local function InitFontRow(row, name)
+        local path = LSM and LSM:Fetch("font", name) or CONFIG_FONT_PATH
+        if not pcall(row.text.SetFont, row.text, path, 12) then
+            SetConfigFont(row.text, 12)
+        end
+        row.text:SetText(name)
+        row.text:SetTextColor(1, 1, 1)
     end
-    content:SetHeight(math.abs(y))
-    
+
+    local frame, button, list, scrollBox, btnText = CreateScrollDropdown(parent, labelText, InitFontRow, function(name)
+        if widget.onChange then widget.onChange(name) end
+    end, widget)
+
+    local count = 0
+    SetupDropdown(button, list, function() return count end, function()
+        local fonts = {}
+        for _, n in ipairs(LSM and LSM:List("font") or {"Friz Quadrata TT", "Arial Narrow", "Skurri"}) do
+            fonts[#fonts + 1] = n
+        end
+        table.sort(fonts)
+        count = #fonts
+        SetScrollItems(scrollBox, fonts)
+    end)
+
     frame.SetSelection = function(self, val)
         btnText:SetText(val)
     end
 
-
-    list:HookScript("OnHide", function()
-        list:SetParent(frame)
-    end)
-    
     return frame
 end
 
 local function CreateMediaDropdown(parent, labelText, dbKey, mediaType, onChange)
-    local frame = CreateFrame("Frame", nil, parent)
-    frame:SetSize(250, 45)
-
-    local label = frame:CreateFontString(nil, "OVERLAY")
-    label:SetPoint("TOPLEFT", 0, 0)
-    SetConfigFont(label, 12)
-    label:SetText(labelText)
-
-    local button = CreateFrame("Button", nil, frame, "BackdropTemplate")
-    button:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -5)
-    button:SetSize(220, 24)
-    button:SetBackdrop({
-        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 12,
-        insets = {left=2, right=2, top=2, bottom=2}
-    })
-    button:SetBackdropColor(0, 0, 0, 0.8)
-
-    local btnText = button:CreateFontString(nil, "OVERLAY")
-    btnText:SetPoint("LEFT", 8, 0)
-    SetConfigFont(btnText, 12)
-    button.text = btnText
-
-    local arrow = button:CreateTexture(nil, "ARTWORK")
-    arrow:SetPoint("RIGHT", -6, 0)
-    arrow:SetSize(12, 12)
-    arrow:SetTexture("Interface\\ChatFrame\\ChatFrameExpandArrow")
-
-    local list = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-    list:SetPoint("TOPLEFT", button, "BOTTOMLEFT", 0, -2)
-    list:SetSize(220, 150)
-    list:SetBackdrop({
-        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 12,
-        insets = {left=2, right=2, top=2, bottom=2}
-    })
-    list:SetBackdropColor(0.1, 0.1, 0.1, 0.98)
-    list:SetFrameStrata("TOOLTIP")
-    list:Hide()
-
-    local scroll = CreateFrame("ScrollFrame", nil, list, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", 4, -4)
-    scroll:SetPoint("BOTTOMRIGHT", -24, 4)
-
-    local content = CreateFrame("Frame", nil, scroll)
-    content:SetSize(190, 100)
-    scroll:SetScrollChild(content)
-
-    local values = {"Default"}
-    if LSM then
-        for _,n in ipairs(LSM:List(mediaType)) do
-            table.insert(values, n)
-        end
-    end
-    table.sort(values, function(a,b)
-        if a == "Default" then return true end
-        if b == "Default" then return false end
-        return a < b
-    end)
-
-    local function Refresh()
-        for _, child in ipairs({content:GetChildren()}) do child:Hide() end
-        local y = 0
-        for _, name in ipairs(values) do
-            local b = CreateFrame("Button", nil, content, "BackdropTemplate")
-            b:SetSize(190, 20)
-            b:SetPoint("TOPLEFT", 0, y)
-
-            local t = b:CreateFontString(nil, "OVERLAY")
-            t:SetPoint("LEFT", 5, 0)
-            SetConfigFont(t, 12)
-            t:SetText(name)
-            t:SetTextColor(1,1,1)
-
-            b:SetScript("OnClick", function()
-                if name == "Default" then
-                    HomeworkTrackerDB[dbKey] = nil
-                else
-                    HomeworkTrackerDB[dbKey] = name
-                end
-                btnText:SetText(name)
-                list:Hide()
-                if onChange then onChange(name) end
-            end)
-            b:SetScript("OnEnter", function(self)
-                local bg = self:CreateTexture(nil, "BACKGROUND")
-                bg:SetAllPoints()
-                bg:SetColorTexture(0.2,0.2,0.2,0.5)
-                self.bg = bg
-            end)
-            b:SetScript("OnLeave", function(self) if self.bg then self.bg:Hide() end end)
-
-            y = y - SMALL_GAP - 4
-        end
-        content:SetHeight(math.abs(y))
-    end
-
-    button:SetScript("OnClick", function()
-        if list:IsShown() then list:Hide() else Refresh(); list:Show() end
-    end)
-
-    do
+    local widget, isNew = TakeWidget(parent, "mediaDropdown:" .. dbKey .. ":" .. mediaType, "Frame")
+    widget.onChange = onChange
+    if not isNew then
         local sel = HomeworkTrackerDB and HomeworkTrackerDB[dbKey]
-        btnText:SetText(sel and sel ~= "" and sel or "Default")
+        widget:SetSelection(sel and sel ~= "" and sel or "Default")
+        return widget
     end
+    -- Row previews the bar texture
+    local function InitMediaRow(row, name)
+        if not row.swatch then
+            row.swatch = row:CreateTexture(nil, "ARTWORK")
+            row.swatch:SetPoint("TOPLEFT", row, "TOPLEFT", 2, -2)
+            row.swatch:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -2, 2)
+        end
+        row.text:SetText(name)
+        row.text:SetTextColor(1, 1, 1)
+
+        local path = (name ~= "Default") and LSM and LSM:Fetch(mediaType, name) or nil
+        local pr, pg, pb = unpack((addon.defaultColors and addon.defaultColors.progress)
+            or {1, 0.4, 0.4})
+        if path then
+            row.swatch:SetTexture(path)
+            row.swatch:SetVertexColor(pr, pg, pb, 0.9)
+        else
+            row.swatch:SetTexture(nil)
+            row.swatch:SetVertexColor(1, 1, 1, 1)
+            row.swatch:SetColorTexture(pr, pg, pb, 0.9)
+        end
+        row.swatch:Show()
+    end
+
+    local frame, button, list, scrollBox, btnText = CreateScrollDropdown(parent, labelText, InitMediaRow, function(name)
+        if name == "Default" then
+            HomeworkTrackerDB[dbKey] = nil
+        else
+            HomeworkTrackerDB[dbKey] = name
+        end
+        if widget.onChange then widget.onChange(name) end
+    end, widget)
+
+    local count = 0
+    SetupDropdown(button, list, function() return count end, function()
+        local values = {"Default"}
+        if LSM then
+            for _, n in ipairs(LSM:List(mediaType)) do
+                values[#values + 1] = n
+            end
+        end
+        table.sort(values, function(a, b)
+            if a == "Default" then return true end
+            if b == "Default" then return false end
+            return a < b
+        end)
+        count = #values
+        SetScrollItems(scrollBox, values)
+    end)
+
+    frame.SetSelection = function(self, val) btnText:SetText(val) end
+    local sel = HomeworkTrackerDB and HomeworkTrackerDB[dbKey]
+    btnText:SetText(sel and sel ~= "" and sel or "Default")
 
     return frame
 end
@@ -670,30 +651,74 @@ local function GetSelectedExpansion()
     return nil
 end
 
--- Clear content
-local function ClearContent()
-    if not contentFrame.scrollChild then return end
-    
-    for _, child in ipairs({contentFrame.scrollChild:GetChildren()}) do
-        child:Hide()
-    end
-    
-    for _, region in ipairs({contentFrame.scrollChild:GetRegions()}) do
-        if region:GetObjectType() == "FontString" or region:GetObjectType() == "Texture" then
-            region:Hide()
+-- Release tab widgets without discarding their frames
+local function ClearContainer(container)
+    for _, pool in pairs(container.configPools or {}) do
+        for _, widget in ipairs(pool) do
+            widget:Hide()
+            widget:ClearAllPoints()
+            if widget.configResetHover then
+                widget:SetScript("OnEnter", nil)
+                widget:SetScript("OnLeave", nil)
+            end
+            if widget.configPools then ClearContainer(widget) end
         end
+        pool.used = 0
     end
 end
 
--- Refresh tab content
-local function RefreshContent()
-    ClearContent()
-    local builder
-    if not tabs then return end
-    for _, tab in ipairs(tabs) do
-        if tab.name == currentTab then builder = tab.builder; break end
+-- One reusable container per tab, per config host
+local function GetTabContainer(tabName)
+    local sc = contentFrame and contentFrame.scrollChild
+    if not sc then return nil end
+
+    sc.tabContainers = sc.tabContainers or {}
+
+    local c = sc.tabContainers[tabName]
+    if not c then
+        c = CreateFrame("Frame", nil, sc)
+        c:SetPoint("TOPLEFT", 0, 0)
+        c:SetPoint("TOPRIGHT", 0, 0)
+        c:SetHeight(1)
+        c.configPools = {}
+        sc.tabContainers[tabName] = c
     end
-    if builder then builder(contentFrame.scrollChild) end
+    return c
+end
+
+-- Refresh tab; reuse skips a built tab
+local function RefreshContent(reuse)
+    if not tabs then return end
+
+    local container = GetTabContainer(currentTab)
+    if not container then return end
+
+    local sc = contentFrame.scrollChild
+    for name, c in pairs(sc.tabContainers) do
+        if name ~= currentTab then c:Hide() end
+    end
+
+    if not reuse then
+        CloseDropdowns()
+        for _, host in pairs({floatingContentFrame, canvasContentFrame}) do
+            for _, c in pairs(host.scrollChild.tabContainers or {}) do c.built = nil end
+        end
+    end
+
+    container:Show()
+
+    if not container.built then
+        ClearContainer(container)
+        for _, tab in ipairs(tabs) do
+            if tab.name == currentTab then
+                tab.builder(container)
+                break
+            end
+        end
+        container.built = true
+    end
+
+    contentFrame:UpdateScrollChildRect()
 end
 
 -- Build profiles tab
@@ -736,9 +761,12 @@ local function BuildTab_Profiles(parent)
             if f.edit then f.edit:SetFocus() end
         end)
 
-        f.scroll = CreateFrame("ScrollFrame", nil, f.textArea, "UIPanelScrollFrameTemplate")
+        f.scroll = CreateFrame("ScrollFrame", nil, f.textArea, "ScrollFrameTemplate")
         f.scroll:SetPoint("TOPLEFT", 4, -4)
         f.scroll:SetPoint("BOTTOMRIGHT", -28, 4)
+        f.scroll.ScrollBar:ClearAllPoints()
+        f.scroll.ScrollBar:SetPoint("TOPLEFT", f.scroll, "TOPRIGHT", 10, 0)
+        f.scroll.ScrollBar:SetPoint("BOTTOMLEFT", f.scroll, "BOTTOMRIGHT", 10, 0)
         f.scroll:SetScript("OnMouseDown", function()
             if f.edit then f.edit:SetFocus() end
         end)
@@ -758,7 +786,7 @@ local function BuildTab_Profiles(parent)
         f.edit:SetScript("OnMouseUp", function(self)
             self:SetFocus()
         end)
-        f.edit:SetScript("OnEscapePressed", f.edit.ClearFocus)
+        f.edit:SetScript("OnEscapePressed", function() f:Hide() end)
         f.edit:SetScript("OnKeyDown", function(self, key)
             if f.isExport and IsControlKeyDown() and (key == "C" or key == "c") then
                 if f.messageText then
@@ -827,10 +855,17 @@ local function BuildTab_Profiles(parent)
         f.title:SetPoint("TOPLEFT", 12, -10)
         SetConfigFont(f.title, 14)
         f.title:SetTextColor(unpack(COLOR_Header))
-        f.title:SetText("Choose Profile Name")
+        f.title:SetText("Choose New Profile Name")
 
         f.input = CreateTextInput(f, 330, 24, false)
         f.input:SetPoint("TOPLEFT", 12, -46)
+        f.input:SetScript("OnEscapePressed", function() f:Hide() end)
+
+        f.messageText = f:CreateFontString(nil, "OVERLAY")
+        f.messageText:SetPoint("TOPLEFT", 14, -82)
+        SetConfigFont(f.messageText, 11)
+        f.messageText:SetTextColor(1, 0.4, 0.4)
+        f.messageText:SetText("")
 
         f.ok = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
         f.ok:SetSize(110, 24)
@@ -848,7 +883,7 @@ local function BuildTab_Profiles(parent)
     end
 
 
-    local function OpenCodePopup(title, text, showCancel, onAccept)
+    local function OpenCodePopup(text, showCancel, onAccept)
         local popup = EnsureCodePopup()
         popup.isExport = not showCancel
         popup.edit:EnableMouse(true)
@@ -879,6 +914,7 @@ local function BuildTab_Profiles(parent)
     local function OpenNamePopup(onAccept)
         local popup = EnsureNamePopup()
         popup.input:SetText("")
+        popup.messageText:SetText("")
         popup.ok:SetScript("OnClick", function()
             local shouldClose = true
             if onAccept then
@@ -908,7 +944,7 @@ local function BuildTab_Profiles(parent)
     hMain:SetPoint("TOPLEFT", 10, y)
     y = y - BIG_GAP + 15
 
-    local activeLabel = parent:CreateFontString(nil, "OVERLAY")
+    local activeLabel = CreateTabLabel(parent, "activeLabel")
     activeLabel:SetPoint("TOPLEFT", 30, y)
     SetConfigFont(activeLabel, 12)
     activeLabel:SetText("Active Profile: " .. addon:GetActiveProfileName())
@@ -920,7 +956,7 @@ local function BuildTab_Profiles(parent)
     switchDD:SetOptions(BuildOptions(true, true))
     switchDD:SetValue(addon:GetActiveProfileName())
     switchDD:SetOnChange(function(selected)
-        local ok, err = addon:SwitchProfile(selected)
+        local ok = addon:SwitchProfile(selected)
         if ok then
             RefreshContent()
             addon:UpdateDisplay()
@@ -932,13 +968,13 @@ local function BuildTab_Profiles(parent)
     local createInput = CreateTextInput(parent, 220, 24, false)
     createInput:SetPoint("TOPLEFT", 30, y)
 
-    local createBtn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    local createBtn = CreateTabFrame(parent, "createBtn", "Button", "UIPanelButtonTemplate")
     createBtn:SetSize(110, 24)
     createBtn:SetPoint("LEFT", createInput, "RIGHT", 10, 0)
     createBtn:SetText("Create")
     createBtn:SetScript("OnClick", function()
         local name = createInput:GetText() or ""
-        local ok, err = addon:CreateProfile(name)
+        local ok = addon:CreateProfile(name)
         if ok then
             RefreshContent()
         end
@@ -950,7 +986,7 @@ local function BuildTab_Profiles(parent)
     copyDD:SetPoint("TOPLEFT", 30, y)
     copyDD:SetOptions(BuildOptions(false, true))
 
-    local copyBtn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    local copyBtn = CreateTabFrame(parent, "copyBtn", "Button", "UIPanelButtonTemplate")
     copyBtn:SetSize(110, 24)
     copyBtn:SetPoint("LEFT", copyDD, "RIGHT", 10, -10)
     copyBtn:SetText("Copy")
@@ -960,7 +996,7 @@ local function BuildTab_Profiles(parent)
         if not from or from == "" then
             return
         end
-        local ok, err = addon:CopyProfile(from, active)
+        local ok = addon:CopyProfile(from, active)
         if ok then
             addon:UpdateDisplay()
             RefreshContent()
@@ -973,7 +1009,7 @@ local function BuildTab_Profiles(parent)
     deleteDD:SetPoint("TOPLEFT", 30, y)
     deleteDD:SetOptions(BuildOptions(false, false))
 
-    local deleteBtn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    local deleteBtn = CreateTabFrame(parent, "deleteBtn", "Button", "UIPanelButtonTemplate")
     deleteBtn:SetSize(110, 24)
     deleteBtn:SetPoint("LEFT", deleteDD, "RIGHT", 10, -10)
     deleteBtn:SetText("Delete")
@@ -982,7 +1018,7 @@ local function BuildTab_Profiles(parent)
         if not target or target == "" then
             return
         end
-        local ok, err = addon:DeleteProfile(target)
+        local ok = addon:DeleteProfile(target)
         if ok then
             RefreshContent()
         end
@@ -994,7 +1030,7 @@ local function BuildTab_Profiles(parent)
     hTransfer:SetPoint("TOPLEFT", 10, y)
     y = y - BIG_GAP + 15
 
-    local importBtn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    local importBtn = CreateTabFrame(parent, "importBtn", "Button", "UIPanelButtonTemplate")
     importBtn:SetSize(140, 24)
     importBtn:SetPoint("TOPLEFT", 30, y)
     importBtn:SetText("Import")
@@ -1006,7 +1042,7 @@ local function BuildTab_Profiles(parent)
     end)
     importBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
     importBtn:SetScript("OnClick", function()
-        OpenCodePopup("Import Profile Code", "", true, function(payload, popup)
+        OpenCodePopup("", true, function(payload, popup)
             if not payload or payload == "" then
                 if popup and popup.messageText then
                     popup.messageText:SetTextColor(1, 0.4, 0.4)
@@ -1032,6 +1068,9 @@ local function BuildTab_Profiles(parent)
                 if ok then
                     RefreshContent()
                 else
+                    if addon.profileNamePopup and addon.profileNamePopup.messageText then
+                        addon.profileNamePopup.messageText:SetText(err or "Import failed")
+                    end
                     return false
                 end
             end)
@@ -1040,7 +1079,7 @@ local function BuildTab_Profiles(parent)
         end)
     end)
 
-    local exportBtn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    local exportBtn = CreateTabFrame(parent, "exportBtn", "Button", "UIPanelButtonTemplate")
     exportBtn:SetSize(140, 24)
     exportBtn:SetPoint("LEFT", importBtn, "RIGHT", 10, 0)
     exportBtn:SetText("Export")
@@ -1054,14 +1093,13 @@ local function BuildTab_Profiles(parent)
     exportBtn:SetScript("OnClick", function()
         local payload, err = addon:ExportProfile(addon:GetActiveProfileName())
         if not payload then
+            print("|cff4db2ffHomeworkTracker:|r " .. (err or "Profile export failed"))
             return
         end
-        OpenCodePopup("Export Profile Code", FormatCodeForDisplay(payload), false, function()
+        OpenCodePopup(FormatCodeForDisplay(payload), false, function()
             return true
         end)
     end)
-
-    y = y - BIG_GAP + 16
 
 end
 
@@ -1100,11 +1138,11 @@ local function BuildTab_General(parent)
     y = y - BIG_GAP + 10
 
 
-    local fVis = CreateFrame("Frame", nil, parent)
+    local fVis = CreateTabFrame(parent, "fVis", "Frame")
     fVis:SetSize(200, 20)
     fVis:SetPoint("TOPLEFT", 15, y)
 
-    local hVis = fVis:CreateFontString(nil, "OVERLAY")
+    local hVis = CreateTabLabel(fVis, "hVis")
     hVis:SetPoint("LEFT", 0, 0)
     SetConfigFont(hVis, 12)
     hVis:SetText("Visibility")
@@ -1235,7 +1273,7 @@ local function BuildTab_General(parent)
         { label = "Rares", db = HomeworkTrackerDB.rares, key = "enable" }
     }
     
-    for i, mod in ipairs(modules) do
+    for _, mod in ipairs(modules) do
         local cb = CreateCheckbox(parent, mod.label, function(val)
             mod.db[mod.key] = val
             addon:UpdateDisplay()
@@ -1245,8 +1283,7 @@ local function BuildTab_General(parent)
         y = y - SMALL_GAP - 14
     end
 
-    local btnReset
-    btnReset, y = PlaceResetButton(parent, y, function()
+    PlaceResetButton(parent, y, function()
         HomeworkTrackerDB.enabled = addon.defaults.enabled
         HomeworkTrackerDB.expansions = {}
         for k, v in pairs(addon.defaults.expansions) do HomeworkTrackerDB.expansions[k] = v end
@@ -1294,24 +1331,32 @@ end
 
 -- Create color picker
 local function CreateColorPicker(parent, label, dbTable, dbKey, defaultR, defaultG, defaultB)
-    local frame = CreateFrame("Frame", nil, parent)
-    frame:SetSize(250, 26)
+    local frame, isNew = TakeWidget(parent, "colorPicker", "Frame")
+    local text, swatch = frame.label, frame.swatch
+    if isNew then
+        frame:SetSize(250, 26)
     
-    local text = frame:CreateFontString(nil, "OVERLAY")
-    text:SetPoint("LEFT", 30, 0)
-    SetConfigFont(text, 12)
-    text:SetText(label)
+        text = frame:CreateFontString(nil, "OVERLAY")
+        text:SetPoint("LEFT", 30, 0)
+        SetConfigFont(text, 12)
+        text:SetText(label)
     
-    local swatch = CreateFrame("Button", nil, frame, "BackdropTemplate")
-    swatch:SetSize(20, 20)
-    swatch:SetPoint("LEFT", 0, 0)
-    swatch:SetBackdrop({
-        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 8,
-        insets = {left=1, right=1, top=1, bottom=1}
-    })
+        swatch = CreateFrame("Button", nil, frame, "BackdropTemplate")
+        swatch:SetSize(20, 20)
+        swatch:SetPoint("LEFT", 0, 0)
+        swatch:SetBackdrop({
+            bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            edgeSize = 8,
+            insets = {left=1, right=1, top=1, bottom=1}
+        })
     
+
+    else
+        text:SetText(label)
+    end
+    frame.label, frame.swatch = text, swatch
+    frame.configResetHover = true
 
     local function UpdateSwatch()
         local r, g, b
@@ -1400,7 +1445,7 @@ local function BuildTab_Appearance(parent)
         addon:UpdateDisplay()
     end)
     slWidth:SetPoint("TOPLEFT", 30, y)
-    slWidth.slider:SetValue(HomeworkTrackerDB.width or 280)
+    slWidth.slider:SetValue(addon.GetFrameWidth and addon:GetFrameWidth() or HomeworkTrackerDB.width or 280)
     y = y - BIG_GAP
 
     local slHeight = CreateSlider(parent, "Height", 120, 1000, 10, function(val)
@@ -1409,7 +1454,7 @@ local function BuildTab_Appearance(parent)
         addon:UpdateDisplay()
     end)
     slHeight:SetPoint("TOPLEFT", 30, y)
-    slHeight.slider:SetValue(HomeworkTrackerDB.height or 400)
+    slHeight.slider:SetValue(addon.GetFrameHeight and addon:GetFrameHeight() or HomeworkTrackerDB.height or 400)
     y = y - BIG_GAP - 10
 
     local hBars = CreateHeader(parent, "Progress Bars")
@@ -1417,7 +1462,7 @@ local function BuildTab_Appearance(parent)
     y = y - BIG_GAP + 10
 
     if LSM then
-        local texDropdown = CreateMediaDropdown(parent, "Texture", "barTexture", "statusbar", function(val)
+        local texDropdown = CreateMediaDropdown(parent, "Texture", "barTexture", "statusbar", function()
             if addon.UpdateDisplay then addon:UpdateDisplay() end
         end)
         texDropdown:SetPoint("TOPLEFT", 30, y)
@@ -1429,11 +1474,10 @@ local function BuildTab_Appearance(parent)
     y = y - BIG_GAP + 10
 
 
-    local fd = CreateFontDropdown(parent, "Font", "font", function(val)
+    local fd = CreateFontDropdown(parent, "Font", function(val)
         addon:SetFontKey(val)
         addon:UpdateDisplay()
     end)
-    fd.SetMainFont = true 
     fd:SetPoint("TOPLEFT", 30, y)
     fd:SetSelection(HomeworkTrackerDB.font or "Friz Quadrata TT")
     y = y - BIG_GAP
@@ -1461,7 +1505,7 @@ local function BuildTab_Appearance(parent)
     y = y - BIG_GAP + 10
 
 
-    local fdHeader = CreateFontDropdown(parent, "Font", "headerFont", function(val)
+    local fdHeader = CreateFontDropdown(parent, "Font", function(val)
         HomeworkTrackerDB.headerFont = val
         addon:RefreshTitleBar()
         addon:UpdateDisplay()
@@ -1510,10 +1554,10 @@ local function BuildTab_Appearance(parent)
     HomeworkTrackerDB.colors = HomeworkTrackerDB.colors or {}
     local colors = HomeworkTrackerDB.colors
 
-    local fText = CreateFrame("Frame", nil, parent)
+    local fText = CreateTabFrame(parent, "fText", "Frame")
     fText:SetSize(200, 20)
     fText:SetPoint("TOPLEFT", 15, y)
-    local hText = fText:CreateFontString(nil, "OVERLAY")
+    local hText = CreateTabLabel(fText, "hText")
     hText:SetPoint("LEFT", 0, 0)
     SetConfigFont(hText, 12)
     hText:SetText("Text")
@@ -1544,11 +1588,11 @@ local function BuildTab_Appearance(parent)
         if _v then hasEnabledExpansion = true; break end
     end
 
-    local fGeneral = CreateFrame("Frame", nil, parent)
+    local fGeneral = CreateTabFrame(parent, "fGeneral", "Frame")
     fGeneral:SetSize(200, 20)
     fGeneral:SetPoint("TOPLEFT", 15, y)
     
-    local hGeneral = fGeneral:CreateFontString(nil, "OVERLAY")
+    local hGeneral = CreateTabLabel(fGeneral, "hGeneral")
     hGeneral:SetPoint("LEFT", 0, 0)
     SetConfigFont(hGeneral, 12)
     hGeneral:SetText("General")
@@ -1584,11 +1628,11 @@ local function BuildTab_Appearance(parent)
 
     if hasEnabledExpansion then
 
-        local fActivities = CreateFrame("Frame", nil, parent)
+        local fActivities = CreateTabFrame(parent, "fActivities", "Frame")
         fActivities:SetSize(200, 20)
         fActivities:SetPoint("TOPLEFT", 15, y)
         
-        local hActivities = fActivities:CreateFontString(nil, "OVERLAY")
+        local hActivities = CreateTabLabel(fActivities, "hActivities")
         hActivities:SetPoint("LEFT", 0, 0)
         SetConfigFont(hActivities, 12)
         hActivities:SetText("Activities")
@@ -1604,10 +1648,16 @@ local function BuildTab_Appearance(parent)
                 table.insert(eventsList, key)
             end
         end
-        table.sort(eventsList, function(a, b) return addon:GetEventName(a) < addon:GetEventName(b) end)
+        -- Expansion timers first, then world events, matching the tracker's own order
+        table.sort(eventsList, function(a, b)
+            local aWorld = (addon.eventDB[a].expansion == nil)
+            local bWorld = (addon.eventDB[b].expansion == nil)
+            if aWorld ~= bWorld then return bWorld end
+            return addon:GetEventName(a) < addon:GetEventName(b)
+        end)
 
         if #eventsList == 0 then
-            local msg = parent:CreateFontString(nil, "OVERLAY")
+            local msg = CreateTabLabel(parent, "msg")
             msg:SetPoint("TOPLEFT", 30, y)
             SetConfigFont(msg, 12)
             if not selectedExpansion then
@@ -1629,7 +1679,20 @@ local function BuildTab_Appearance(parent)
                     if defG and defG > 1 then defG = defG / 255 end
                     if defB and defB > 1 then defB = defB / 255 end
                 end
-                local cp = CreateColorPicker(parent, label, colors.activities, key, defR, defG, defB)
+
+                -- An event running a named expansion is coloured per expansion, not per event
+                local dbTable, dbKey = colors.activities, key
+                local expLabel = addon:GetEventExpansionLabel(key)
+                if expLabel then
+                    colors.expansions = colors.expansions or {}
+                    dbTable, dbKey = colors.expansions, expLabel
+                    label = label .. ": " .. expLabel
+                    if addon.expansionColors and addon.expansionColors[expLabel] then
+                        defR, defG, defB = unpack(addon.expansionColors[expLabel])
+                    end
+                end
+
+                local cp = CreateColorPicker(parent, label, dbTable, dbKey, defR, defG, defB)
                 cp:SetPoint("TOPLEFT", 30, y)
                 y = y - SMALL_GAP - 14
             end
@@ -1653,11 +1716,11 @@ local function BuildTab_Appearance(parent)
         end)
 
         if #standaloneReps > 0 then
-            local fReps = CreateFrame("Frame", nil, parent)
+            local fReps = CreateTabFrame(parent, "fReps", "Frame")
             fReps:SetSize(200, 20)
             fReps:SetPoint("TOPLEFT", 15, y)
 
-            local hReps = fReps:CreateFontString(nil, "OVERLAY")
+            local hReps = CreateTabLabel(fReps, "hReps")
             hReps:SetPoint("LEFT", 0, 0)
             SetConfigFont(hReps, 12)
             hReps:SetText("Reputations")
@@ -1674,14 +1737,14 @@ local function BuildTab_Appearance(parent)
         end
 
 
-        local fRares = CreateFrame("Frame", nil, parent)
+        local fRares = CreateTabFrame(parent, "fRares", "Frame")
         fRares:SetSize(200, 20)
         fRares:SetPoint("TOPLEFT", 15, y)
         
-        local hRares = fRares:CreateFontString(nil, "OVERLAY")
+        local hRares = CreateTabLabel(fRares, "hRares")
         hRares:SetPoint("LEFT", 0, 0)
         SetConfigFont(hRares, 12)
-        hRares:SetText("Rare / Reputation Zones")
+        hRares:SetText("Zones")
         hRares:SetTextColor(0.8, 0.8, 0.5)
         y = y - SMALL_GAP - 9
         
@@ -1700,7 +1763,7 @@ local function BuildTab_Appearance(parent)
             end
             table.sort(zones, function(a, b) return a.order < b.order end)
             if #zones == 0 then
-                local msg = parent:CreateFontString(nil, "OVERLAY")
+                local msg = CreateTabLabel(parent, "msg")
                 msg:SetPoint("TOPLEFT", 30, y)
                 SetConfigFont(msg, 12)
                 msg:SetText("No zones for the selected expansion.")
@@ -1761,10 +1824,11 @@ local function BuildTab_Appearance(parent)
             local stopDrag -- forward declaration for use in closures
 
             -- floating copy of the button being moved, keep button template
-            local dragFrame = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+            local dragFrame = CreateTabFrame(parent, "dragFrame", "Button", "UIPanelButtonTemplate")
             dragFrame:SetSize(200, lineHeight)
             -- make it not respond to clicks
             dragFrame:EnableMouse(false)
+            dragFrame:SetScript("OnUpdate", nil)
             dragFrame:RegisterForDrag("LeftButton")
             dragFrame:SetScript("OnDragStop", function(self)
                 if self.draggedName then
@@ -1774,7 +1838,7 @@ local function BuildTab_Appearance(parent)
                     end
                 end
             end)
-            local dragText = dragFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            local dragText = CreateTabLabel(dragFrame, "dragText", "GameFontNormal")
             dragText:ClearAllPoints()
             dragText:SetPoint("CENTER", 0, 0)
             dragText:SetJustifyH("CENTER")
@@ -1812,13 +1876,13 @@ local function BuildTab_Appearance(parent)
                 end
 
                 local scale = UIParent:GetEffectiveScale()
-                local x, y = GetCursorPosition()
-                x, y = x / scale, y / scale
+                local cursorX, cursorY = GetCursorPosition()
+                cursorX, cursorY = cursorX / scale, cursorY / scale
                 dragFrame:ClearAllPoints()
-                dragFrame:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
+                dragFrame:SetPoint("CENTER", UIParent, "BOTTOMLEFT", cursorX, cursorY)
 
 
-                local cy = y
+                local cy = cursorY
                 local newIndex
                 for i, pos in ipairs(dragFrame.positions or {}) do
                     if cy > pos then
@@ -1889,10 +1953,10 @@ local function BuildTab_Appearance(parent)
                     end
                 end
                 local scale = UIParent:GetEffectiveScale()
-                local x, y = GetCursorPosition()
-                x, y = x / scale, y / scale
+                local cursorX, cursorY = GetCursorPosition()
+                cursorX, cursorY = cursorX / scale, cursorY / scale
                 dragFrame:ClearAllPoints()
-                dragFrame:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
+                dragFrame:SetPoint("CENTER", UIParent, "BOTTOMLEFT", cursorX, cursorY)
                 dragFrame:Show()
                 dragFrame:SetScript("OnUpdate", onDragUpdate)
             end
@@ -1908,7 +1972,7 @@ local function BuildTab_Appearance(parent)
             end
 
             for idx, m in ipairs(mods) do
-                local f = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+                local f = CreateTabFrame(parent, "f", "Button", "UIPanelButtonTemplate")
                 f:SetSize(200, lineHeight)
                 f:SetPoint("TOPLEFT", 30, reorderStartY - (idx - 1) * (lineHeight + lineGap))
                 f.name = m.name
@@ -1940,8 +2004,7 @@ local function BuildTab_Appearance(parent)
     y = y + (2 * BIG_GAP) - (2 * SMALL_GAP) - 6
 
 
-    local btnReset
-    btnReset, y = PlaceResetButton(parent, y, function()
+    PlaceResetButton(parent, y, function()
         HomeworkTrackerDB.locked = false
         HomeworkTrackerDB.scale = addon.defaults.scale
         HomeworkTrackerDB.colors = {} -- Clear overrides
@@ -2010,7 +2073,7 @@ local function BuildTab_Activities(parent)
 
     local function AddEventCheckboxes(keys, emptyText)
         if #keys == 0 then
-            local msg = parent:CreateFontString(nil, "OVERLAY")
+            local msg = CreateTabLabel(parent, "msg")
             msg:SetPoint("TOPLEFT", 30, y)
             SetConfigFont(msg, 12)
             msg:SetText(emptyText)
@@ -2044,7 +2107,7 @@ local function BuildTab_Activities(parent)
     if hasEnabledExpansion then
         AddEventCheckboxes(expansionEvents, "No activities for the selected expansion.")
     else
-        local msg = parent:CreateFontString(nil, "OVERLAY")
+        local msg = CreateTabLabel(parent, "msg")
         msg:SetPoint("TOPLEFT", 30, y)
         SetConfigFont(msg, 12)
         msg:SetText("No expansion is currently enabled.")
@@ -2071,12 +2134,11 @@ local function BuildTab_Activities(parent)
     cb2:SetPoint("TOPLEFT", 30, y)
     cb2.check:SetChecked(HomeworkTrackerDB.activities.hideComplete)
     
-    local btnReset
-    btnReset, y = PlaceResetButton(parent, y, function()
+    PlaceResetButton(parent, y, function()
 
-        local selectedExpansion = GetSelectedExpansion()
+        local currentExpansion = GetSelectedExpansion()
         for key, ev in pairs(addon.eventDB or {}) do
-            if not ev.expansion or ev.expansion == selectedExpansion then
+            if not ev.expansion or ev.expansion == currentExpansion then
                 HomeworkTrackerDB.activities[key] = (addon.defaults.activities and addon.defaults.activities[key]) or false
             end
         end
@@ -2116,8 +2178,7 @@ local function BuildTab_GreatVault(parent)
     cbGV3:SetPoint("TOPLEFT", 30, y)
     cbGV3.check:SetChecked(HomeworkTrackerDB.greatVault.showDelves)
     
-    local btnReset
-    btnReset, y = PlaceResetButton(parent, y, function()
+    PlaceResetButton(parent, y, function()
         HomeworkTrackerDB.greatVault.showRaid = addon.defaults.greatVault.showRaid
         HomeworkTrackerDB.greatVault.showMythicPlus = addon.defaults.greatVault.showMythicPlus
         HomeworkTrackerDB.greatVault.showDelves = addon.defaults.greatVault.showDelves
@@ -2185,7 +2246,7 @@ local function BuildTab_Weekly(parent)
             for _, zn in ipairs(zoneNames) do
                 local list = zones[zn]
                 if list and #list > 0 then
-                    local lbl = parent:CreateFontString(nil, "OVERLAY")
+                    local lbl = CreateTabLabel(parent, "lbl")
                     SetConfigFont(lbl, 12)
                     lbl:SetPoint("TOPLEFT", 30, y)
                     lbl:SetText(ZoneNameFromCategory(zn))
@@ -2211,7 +2272,7 @@ local function BuildTab_Weekly(parent)
             y = y + SMALL_GAP
 
         else
-            local msg = parent:CreateFontString(nil, "OVERLAY")
+            local msg = CreateTabLabel(parent, "msg")
             msg:SetPoint("TOPLEFT", 30, y)
             SetConfigFont(msg, 12)
             if not selectedExpansion then
@@ -2235,8 +2296,7 @@ local function BuildTab_Weekly(parent)
     cbWQ1:SetPoint("TOPLEFT", 30, y)
     cbWQ1.check:SetChecked(HomeworkTrackerDB.weekly.hideComplete)
 
-    local btnReset
-    btnReset, y = PlaceResetButton(parent, y, function()
+    PlaceResetButton(parent, y, function()
         HomeworkTrackerDB.weekly.hideComplete = addon.defaults.weekly.hideComplete
         HomeworkTrackerDB.weekly.hidden = {}
         RefreshContent()
@@ -2293,7 +2353,7 @@ local function BuildTab_Currencies(parent)
     end
 
     local function renderSubheader(text)
-        local hdr = parent:CreateFontString(nil, "OVERLAY")
+        local hdr = CreateTabLabel(parent, "hdr")
         hdr:SetPoint("TOPLEFT", 30, y)
         SetConfigFont(hdr, 12)
         hdr:SetText(text)
@@ -2321,7 +2381,7 @@ local function BuildTab_Currencies(parent)
     end
 
     if shown == 0 then
-        local msg = parent:CreateFontString(nil, "OVERLAY")
+        local msg = CreateTabLabel(parent, "msg")
         msg:SetPoint("TOPLEFT", 30, y)
         SetConfigFont(msg, 12)
         if selectedExpansion then
@@ -2364,8 +2424,7 @@ local function BuildTab_Currencies(parent)
 
     y = y - SMALL_GAP - 30
 
-    local btnReset
-    btnReset, y = PlaceResetButton(parent, y, function()
+    PlaceResetButton(parent, y, function()
 
         if addon.currencyDB then
             for _, c in ipairs(addon.currencyDB) do
@@ -2417,7 +2476,7 @@ local function BuildTab_Progress(parent)
                 y = y - SMALL_GAP - 14
             end
         else
-            local msg = parent:CreateFontString(nil, "OVERLAY")
+            local msg = CreateTabLabel(parent, "msg")
             msg:SetPoint("TOPLEFT", 30, y)
             SetConfigFont(msg, 12)
             msg:SetText("No season progress entries available.")
@@ -2429,8 +2488,7 @@ local function BuildTab_Progress(parent)
     y = y + SMALL_GAP - 14
 
 
-    local btnReset
-    btnReset, y = PlaceResetButton(parent, y, function()
+    PlaceResetButton(parent, y, function()
         HomeworkTrackerDB.progress = HomeworkTrackerDB.progress or {}
         HomeworkTrackerDB.progress.hidden = {}
         RefreshContent()
@@ -2494,7 +2552,7 @@ local function BuildTab_Reputations(parent)
             for _, zn in ipairs(zoneNames) do
                 local list = zones[zn]
                 if list and #list > 0 then
-                    local zoneLabel = parent:CreateFontString(nil, "OVERLAY")
+                    local zoneLabel = CreateTabLabel(parent, "zoneLabel")
                     SetConfigFont(zoneLabel, 12)
                     zoneLabel:SetPoint("TOPLEFT", 30, y)
                     zoneLabel:SetText(ZoneNameFromCategory(zn))
@@ -2517,7 +2575,7 @@ local function BuildTab_Reputations(parent)
             end
             y = y + SMALL_GAP
         else
-            local msg = parent:CreateFontString(nil, "OVERLAY")
+            local msg = CreateTabLabel(parent, "msg")
             msg:SetPoint("TOPLEFT", 30, y)
             SetConfigFont(msg, 12)
             if not selectedExpansion then
@@ -2541,8 +2599,7 @@ local function BuildTab_Reputations(parent)
     cb2:SetPoint("TOPLEFT", 30, y)
     cb2.check:SetChecked(HomeworkTrackerDB.reputations.hideComplete)
     
-    local btnReset
-    btnReset, y = PlaceResetButton(parent, y, function()
+    PlaceResetButton(parent, y, function()
         HomeworkTrackerDB.reputations.hideComplete = addon.defaults.reputations.hideComplete
         HomeworkTrackerDB.reputations.hidden = {}
         if addon.defaults.reputations.hidden then
@@ -2588,7 +2645,7 @@ local function BuildTab_Rares(parent)
             end)
 
             if #sortedZones == 0 then
-                local msg = parent:CreateFontString(nil, "OVERLAY")
+                local msg = CreateTabLabel(parent, "msg")
                 msg:SetPoint("TOPLEFT", 30, y)
                 SetConfigFont(msg, 12)
                 msg:SetText("No rares for the selected expansion.")
@@ -2607,7 +2664,7 @@ local function BuildTab_Rares(parent)
                 end
             end
         else
-            local msg = parent:CreateFontString(nil, "OVERLAY")
+            local msg = CreateTabLabel(parent, "msg")
             msg:SetPoint("TOPLEFT", 30, y)
             SetConfigFont(msg, 12)
             msg:SetText("No expansion is currently enabled.")
@@ -2639,8 +2696,7 @@ local function BuildTab_Rares(parent)
     cbRep:SetPoint("TOPLEFT", 30, y)
     cbRep.check:SetChecked(HomeworkTrackerDB.rares.hideRepComplete or false)
 
-    local btnReset
-    btnReset, y = PlaceResetButton(parent, y, function()
+    PlaceResetButton(parent, y, function()
         HomeworkTrackerDB.rares.currentZone = addon.defaults.rares.currentZone
         HomeworkTrackerDB.rares.hideRepComplete = addon.defaults.rares.hideRepComplete
         HomeworkTrackerDB.rares.hiddenZones = {}
@@ -2687,7 +2743,7 @@ local function BuildTab_Crests(parent)
             y = y - SMALL_GAP - 14
         end
     else
-        local msg = parent:CreateFontString(nil, "OVERLAY")
+        local msg = CreateTabLabel(parent, "msg")
         msg:SetPoint("TOPLEFT", 30, y)
         SetConfigFont(msg, 12)
         if not selectedExpansion then
@@ -2699,8 +2755,7 @@ local function BuildTab_Crests(parent)
 
     y = y + SMALL_GAP - 12
 
-    local btnReset
-    btnReset, y = PlaceResetButton(parent, y, function()
+    PlaceResetButton(parent, y, function()
         if addon.crestDB then
             for _, c in ipairs(addon.crestDB) do
                 HomeworkTrackerDB.crests[c.id] = true
@@ -2728,7 +2783,7 @@ tabs = {
 }
 
 -- Switch section
-local function SwitchTab(tabName)
+local function SwitchTab(tabName, reuse)
     currentTab = tabName
     for _, btn in ipairs(sidebar.buttons) do
         if btn.key == tabName then
@@ -2740,7 +2795,7 @@ local function SwitchTab(tabName)
     if contentFrame then
         contentFrame:SetVerticalScroll(0)
     end
-    RefreshContent()
+    RefreshContent(reuse ~= false)
 end
 
 -- Create sidebar button
@@ -2771,8 +2826,6 @@ local function CreateSidebarButton(parent, text, index)
 end
 
 
-function addon:RefreshConfigPanel() end
-
 local function BuildExpansionOptions()
     local opts = {}
     local map = {}
@@ -2795,14 +2848,11 @@ local function AttachExpansionDropdown(parent, yOffset)
     expDD:SetPoint("TOP", parent, "TOP", 0, yOffset)
     parent.expansionDropdown = expDD
 
-    local labelToKey = {}
     local function RefreshExpansionDropdown()
         local opts, map = BuildExpansionOptions()
-        labelToKey = map
         if #opts == 0 then
             expDD:SetOptions({"(no expansions enabled)"})
             expDD:SetValue("(no expansions enabled)")
-            expDD:SetOnChange(nil)
             return
         end
         expDD:SetOptions(opts)
@@ -2814,9 +2864,11 @@ local function AttachExpansionDropdown(parent, yOffset)
     end
 
     expDD:SetOnChange(function(label)
-        if not labelToKey[label] then return end
+        -- Fresh map; expansions toggle after build
+        local _, map = BuildExpansionOptions()
+        if not map[label] then return end
         HomeworkTrackerDB.ui = HomeworkTrackerDB.ui or {}
-        HomeworkTrackerDB.ui.selectedExpansion = labelToKey[label]
+        HomeworkTrackerDB.ui.selectedExpansion = map[label]
         RefreshContent()
         addon:UpdateDisplay()
     end)
@@ -2845,19 +2897,12 @@ local function AttachSidebarAndScroll(parent, sidebarTopOffset)
         table.insert(sb.buttons, btn)
     end
 
-    local cf = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
+    local cf = CreateFrame("ScrollFrame", nil, parent, "ScrollFrameTemplate")
     cf:SetPoint("TOPLEFT", sb, "TOPRIGHT", 10, 0)
     cf:SetPoint("BOTTOMRIGHT", -36, 10)
-
-    cf:SetScript("OnMouseWheel", function(self, delta)
-        local current = self:GetVerticalScroll()
-        local step = 30
-        if delta > 0 then
-            self:SetVerticalScroll(math.max(0, current - step))
-        else
-            self:SetVerticalScroll(math.min(self:GetVerticalScrollRange(), current + step))
-        end
-    end)
+    cf.ScrollBar:ClearAllPoints()
+    cf.ScrollBar:SetPoint("TOPLEFT", cf, "TOPRIGHT", 10, 2)
+    cf.ScrollBar:SetPoint("BOTTOMLEFT", cf, "BOTTOMRIGHT", 10, 5)
 
     local child = CreateFrame("Frame", nil, cf)
     child:SetSize(CONFIG_WIDTH - SIDEBAR_WIDTH - 66, 1)
@@ -2888,13 +2933,8 @@ function addon:CreateConfigPanel()
     f:Hide()
 
     f:SetScript("OnHide", function()
-        local copy = {}
-        for i, l in ipairs(dropdownLists) do copy[i] = l end
-        for _, l in ipairs(copy) do
-            if l and l:IsShown() then
-                l:Hide()
-            end
-        end
+        CloseDropdowns()
+        CloseConfigPopups()
     end)
 
     tinsert(UISpecialFrames, "HomeworkTrackerConfig")
@@ -2960,14 +3000,18 @@ function addon:OpenConfig()
     if self.configFrame:IsShown() then
         self.configFrame:Hide()
     else
-        self:RefreshConfigPanel()
         self.configFrame:Show()
+        SwitchTab(currentTab, false)
     end
 end
 
 -- Register in WoW AddOns settings (ESC > Options > AddOns)
 do
     if Settings and Settings.RegisterCanvasLayoutCategory then
+        settingsCanvas:SetScript("OnHide", function()
+            CloseDropdowns()
+            CloseConfigPopups()
+        end)
         settingsCanvas:SetScript("OnShow", function()
             if addon.configFrame and addon.configFrame:IsShown() then
                 addon.configFrame:Hide()
@@ -2976,7 +3020,7 @@ do
             sidebar = canvasSidebar
             contentFrame = canvasContentFrame
             configFrame = settingsCanvas
-            addon:RefreshConfigPanel()
+            SwitchTab(currentTab, false)
         end)
         settingsCategory = Settings.RegisterCanvasLayoutCategory(settingsCanvas, "Homework Tracker")
         Settings.RegisterAddOnCategory(settingsCategory)

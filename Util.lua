@@ -8,11 +8,23 @@ local DEFAULT_FONT = "Friz Quadrata TT"
 local DEFAULT_FONT_PATH = "Fonts\\FRIZQT__.TTF"
 
 -- Holiday scanning, in months and seconds
-local HOLIDAY_SCAN_MONTHS = 12
+local HOLIDAY_SCAN_PAST_MONTHS = 18
+local HOLIDAY_SCAN_FUTURE_MONTHS = 12
 local HOLIDAY_SCAN_DEBOUNCE = 0.3
 local HOLIDAY_CACHE_LEASE = 604800
 local HOLIDAY_RESCAN_COOLDOWN = 600
-local GREAT_VAULT_MAX_REQUERIES = 10
+local GREAT_VAULT_NUDGE_EVERY = 10
+-- Midnight Season 2 World rewards for vault
+local DELVE_VAULT_ITEM_LEVELS = { 279, 282, 285, 289, 292, 295, 298, 305, 305, 305, 305, 305, 305 }
+
+-- Arena and MDI realms keep their matching production cadence
+local function GetEpochRegion(region)
+    if type(region) ~= "number" then return 1 end
+    if region >= 1 and region <= 5 then return region end
+    if region >= 21 and region <= 25 then return region - 20 end
+    if region >= 71 and region <= 75 then return region - 70 end
+    return 1
+end
 
 -- Font system with LibSharedMedia
 local LSM = LibStub and LibStub("LibSharedMedia-3.0", true)
@@ -21,30 +33,47 @@ local LSM = LibStub and LibStub("LibSharedMedia-3.0", true)
 local _dataCache = {}
 local CACHE_NIL = {} -- Marks a cache entry whose real value is nil (distinguishes from uncached)
 local _timingResult = {} -- Reused table written by GetEventTiming; avoids creating a new table on every call
+local _scheduledEventCache = {} -- Absolute starts avoid rebuilding the scheduler list every second
 local _greatVaultRequeryFrame = nil -- Lightweight requery frame for missing Great Vault data
-local _greatVaultRequeries = 0 -- Retries left before giving up on missing item levels
+local _greatVaultRequeries = 0 -- Attempts so far, used only to space out the nudges
+local _greatVaultRequeryHeld = false -- Asked for while the login gate was still shut
+local VAULT_DIRTY = { GreatVault = true } -- Only the vault rows change on a requery
 
 -- Holiday windows read off the calendar, keyed by event ID and by name
 local _holidayCache = nil
 local _holidayScanRunning = false
 local _holidayScannedAt = nil
 local _holidayStale = nil
-local _holidaySkew = nil -- Clock offset in force when the cache was built
+local _holidayProvisional = nil -- Set when a scan came back empty, which means the calendar was not ready
 
--- Empty the cache so data is looked up again next time
-function addon:ResetGreatVaultRequeries()
-    _greatVaultRequeries = 0
+-- Open the login gate and retry what it held back
+function addon:AllowGreatVaultRequery()
+    self._allowVaultRequery = true
+    if not _greatVaultRequeryHeld then return end
+    _greatVaultRequeryHeld = false
+    self:InvalidateDataCache("greatVault")
+    if self.UpdateDisplay then self:UpdateDisplay(VAULT_DIRTY) end
 end
 
-function addon:InvalidateDataCache()
-    wipe(_dataCache)
+-- Drop cached lookups: everything, one namespace, or the single entry that changed
+function addon:InvalidateDataCache(namespace, id)
+    if not namespace then
+        wipe(_dataCache)
+    elseif id then
+        _dataCache[namespace .. id] = nil
+    else
+        for key in pairs(_dataCache) do
+            if string.find(key, namespace, 1, true) == 1 then _dataCache[key] = nil end
+        end
+    end
 end
 
--- Silently shows and hides WeeklyRewardsFrame to force a server data refresh
+-- Re-reads the vault every half second until the data lands
 function addon:RequestGreatVaultRequery()
-    if not self._allowVaultRequery then return end
-    if _greatVaultRequeries >= GREAT_VAULT_MAX_REQUERIES then return end
-    _greatVaultRequeries = _greatVaultRequeries + 1
+    if not self._allowVaultRequery then
+        _greatVaultRequeryHeld = true
+        return
+    end
     if _greatVaultRequeryFrame and _greatVaultRequeryFrame:IsShown() then
         _greatVaultRequeryFrame.t = 0
         return
@@ -56,26 +85,31 @@ function addon:RequestGreatVaultRequery()
     _greatVaultRequeryFrame.t = 0
     _greatVaultRequeryFrame:Show()
     _greatVaultRequeryFrame:SetScript("OnUpdate", function(self, elapsed)
+        local prof = addon._profile
+        local profStart = prof and debugprofilestop() or nil
         self.t = (self.t or 0) + elapsed
         if self.t > 0.5 then
             self:Hide()
             self:SetScript("OnUpdate", nil)
-            -- Silent-show Blizzard's Great Vault UI to force a server/client refresh
-            if WeeklyRewardsFrame then
-                WeeklyRewardsFrame:SetAlpha(0)
-                WeeklyRewardsFrame:Show()
+            _greatVaultRequeries = _greatVaultRequeries + 1
+            -- Occasional nudge makes the server resend; an open vault is left alone
+            if (_greatVaultRequeries % GREAT_VAULT_NUDGE_EVERY) == 1 and C_WeeklyRewards.OnUIInteract
+                and not (WeeklyRewardsFrame and WeeklyRewardsFrame:IsShown()) then
+                -- Same paired calls the vault frame makes on show and hide, minus its sounds
+                C_WeeklyRewards.OnUIInteract()
                 C_Timer.After(0.06, function()
-                    if WeeklyRewardsFrame then
-                        WeeklyRewardsFrame:Hide()
-                        WeeklyRewardsFrame:SetAlpha(1)
+                    -- A vault opened meanwhile owns the interaction and closes it itself
+                    if not (WeeklyRewardsFrame and WeeklyRewardsFrame:IsShown()) then
+                        C_WeeklyRewards.CloseInteraction()
                     end
                 end)
             end
-            if addon.InvalidateDataCache then addon:InvalidateDataCache() end
-            if addon.CheckVisibilityState then addon:CheckVisibilityState() end
-            if addon.UpdateDisplay then addon:UpdateDisplay() end
-            if addon.RefreshTitleBar then addon:RefreshTitleBar() end
+            if profStart and addon.RecordVaultWait then addon:RecordVaultWait(profStart) end
+            addon:InvalidateDataCache("greatVault")
+            if addon.UpdateDisplay then addon:UpdateDisplay(VAULT_DIRTY) end
+            return
         end
+        if profStart and addon.RecordVaultWait then addon:RecordVaultWait(profStart) end
     end)
 end
 
@@ -119,10 +153,10 @@ function addon:SetFont(fs, fontKey, size, flags)
     if not fs or not fs.SetFont then return false end
     local path = self:GetFontPath(fontKey or self:GetFontKey())
     local fontSize = size or self:GetFontSize()
-    if not flags then
-        flags = HomeworkTrackerDB and HomeworkTrackerDB.fontOutline
-    end
-    return pcall(fs.SetFont, fs, path, fontSize, flags or "OUTLINE")
+    flags = flags or (HomeworkTrackerDB and HomeworkTrackerDB.fontOutline) or "OUTLINE"
+    -- WoW rejects "NONE"; nil flags means no outline
+    if flags == "NONE" then flags = nil end
+    return pcall(fs.SetFont, fs, path, fontSize, flags)
 end
 
 -- Return current bar texture path, or nil
@@ -174,8 +208,13 @@ function addon:FormatTime(seconds)
 end
 
 -- Quest completion check
-function addon:IsQuestComplete(questID)
+function addon:IsQuestComplete(questID, accountWide)
     if not questID or type(questID) ~= "number" or questID == 0 then return false end
+
+    if accountWide and C_QuestLog.IsQuestFlaggedCompletedOnAccount
+        and C_QuestLog.IsQuestFlaggedCompletedOnAccount(questID) then
+        return true
+    end
 
     -- Try quest log first
     if C_QuestLog.GetLogIndexForQuestID then
@@ -221,7 +260,7 @@ function addon:GetResetTimestampForWeekday(targetWeekday)
     if not cal then return nil end
 
     local now = GetServerTime()
-    local secondsSinceMidnight = (cal.hour * 3600) + (cal.minute * 60) + (cal.second or 0)
+    local secondsSinceMidnight = (cal.hour * 3600) + (cal.minute * 60)
     local todayReset = now - secondsSinceMidnight + (resetInfo.hour * 3600)
 
     local diffDays = ((cal.weekday - targetWeekday) + 7) % 7
@@ -303,9 +342,9 @@ function addon:GetGreatVaultSlotDetail(slotKey, entry)
 
     if entry.itemLevel then
         if entry.upgradeItemLevel and entry.upgradeItemLevel > entry.itemLevel then
-            table.insert(parts, string.format("ilvl %d (up to %d)", entry.itemLevel, entry.upgradeItemLevel))
+            table.insert(parts, string.format("ILVL %d (up to %d)", entry.itemLevel, entry.upgradeItemLevel))
         else
-            table.insert(parts, string.format("ilvl %d", entry.itemLevel))
+            table.insert(parts, string.format("ILVL %d", entry.itemLevel))
         end
     end
 
@@ -384,11 +423,21 @@ function addon:GetGreatVaultInfo()
         local ok, activities = pcall(C_WeeklyRewards.GetActivities, t)
         if ok and activities then
             for _, activity in ipairs(activities) do
-                local entry = { level = activity.level, progress = activity.progress, threshold = activity.threshold, id = activity.id }
-                if activity.difficultyId then entry.difficultyId = activity.difficultyId end
+                local entry = {
+                    level = activity.level,
+                    progress = activity.progress,
+                    threshold = activity.threshold,
+                    id = activity.id,
+                    activityInfo = activity,
+                }
+                -- Blizzard's World reward links can return valid but stale item levels
+                if activity.type == Enum.WeeklyRewardChestThresholdType.World then
+                    entry.itemLevel = DELVE_VAULT_ITEM_LEVELS[entry.level]
+                    entry.upgradeItemLevel = DELVE_VAULT_ITEM_LEVELS[(entry.level or 0) + 1]
+                end
 
                 -- Try to get Blizzard's example reward item level
-                if entry.id and C_WeeklyRewards and C_WeeklyRewards.GetExampleRewardItemHyperlinks then
+                if not entry.itemLevel and entry.id and C_WeeklyRewards and C_WeeklyRewards.GetExampleRewardItemHyperlinks then
                     local ok2, itemLink, upgradeLink = pcall(C_WeeklyRewards.GetExampleRewardItemHyperlinks, entry.id)
                     if ok2 and itemLink and itemLink ~= "" and itemLink ~= "[]" and C_Item and C_Item.GetDetailedItemLevelInfo then
                         local ok3, ilvl = pcall(C_Item.GetDetailedItemLevelInfo, itemLink)
@@ -513,6 +562,7 @@ local function ApplyParagonInfo(result, repID)
     result.renownLevelThreshold = threshold
     result.renownReputationEarned = result.hasRewardPending and threshold or (value % threshold)
 
+    ---@diagnostic disable-next-line: undefined-field
     local label = _G.PARAGON or "Paragon"
     if result.paragonLevel > 0 then label = label .. " " .. result.paragonLevel end
     result.label = label
@@ -573,7 +623,7 @@ function addon:GetReputationInfo(repID)
     if repData then
         local isMaxed = not repData.nextReactionThreshold
         local current = repData.currentStanding - repData.currentReactionThreshold
-        local max = 0
+        local max
         if not isMaxed then
             max = repData.nextReactionThreshold - repData.currentReactionThreshold
         else
@@ -634,12 +684,10 @@ local function ServerTimeSkew()
     if not (C_DateAndTime and C_DateAndTime.GetCurrentCalendarTime) then return 0 end
     local now = C_DateAndTime.GetCurrentCalendarTime()
     if not now then return 0 end
-    local year, month, day = now.year, now.month, now.monthDay or now.day
+    local year, month, day = now.year, now.month, now.monthDay
     local hour, minute = now.hour or 0, now.minute or 0
     if not (year and month and day) then return 0 end
     local asLocal = time({ year = year, month = month, day = day, hour = hour, min = minute, sec = 0 })
-    -- The calendar only reports whole minutes while GetServerTime counts seconds,
-    -- so the raw difference drifts. Real offsets are quarter hours; round to one.
     local raw = (asLocal or 0) - GetServerTime()
     return math.floor(raw / 900 + 0.5) * 900
 end
@@ -700,13 +748,19 @@ local function WantedHolidays()
 end
 
 local function RecordHoliday(store, key, entry)
-    local prev = store[key]
-    if not prev or entry.startTime < prev.startTime then
-        store[key] = entry
+    local windows = store[key]
+    if not windows then
+        windows = {}
+        store[key] = windows
     end
+    for i = 1, #windows do
+        local saved = windows[i]
+        if saved.startTime == entry.startTime and saved.endTime == entry.endTime then return end
+    end
+    windows[#windows + 1] = entry
 end
 
--- Read one month, taking only the opening entry of each wanted holiday
+-- Read one month, taking every opening entry of each wanted holiday
 local function ScanCalendarMonth(found, wantedIds, wantedNames, numDays)
     for day = 1, (numDays or 31) do
         local count = C_Calendar.GetNumDayEvents(0, day) or 0
@@ -772,7 +826,7 @@ do
     end
 end
 
--- Walk a year of calendar months in one pass
+-- Walk calendar history through the next year in one pass
 function addon:RequestHolidayScan()
     if _holidayScanRunning then return end
     if _holidayCache and not _holidayStale then return end
@@ -782,6 +836,7 @@ function addon:RequestHolidayScan()
         _holidayCache = { byID = {}, byName = {} }
         _holidayScannedAt = GetTime()
         _holidayStale = nil
+        _holidayProvisional = nil
         return
     end
 
@@ -790,7 +845,7 @@ function addon:RequestHolidayScan()
         if stored then
             _holidayCache = stored
             _holidayScannedAt = GetTime()
-            _holidaySkew = ServerTimeSkew()
+            _holidayProvisional = nil
             return
         end
     end
@@ -814,7 +869,8 @@ function addon:RequestHolidayScan()
 
     local found = { byID = {}, byName = {} }
     C_Calendar.SetAbsMonth(today.month, today.year)
-    for _ = 1, HOLIDAY_SCAN_MONTHS do
+    C_Calendar.SetMonth(-HOLIDAY_SCAN_PAST_MONTHS)
+    for _ = -HOLIDAY_SCAN_PAST_MONTHS, HOLIDAY_SCAN_FUTURE_MONTHS do
         local info = C_Calendar.GetMonthInfo(0)
         local numDays = info and info.numDays or 31
         ScanCalendarMonth(found, wantedIds, wantedNames, numDays)
@@ -822,11 +878,16 @@ function addon:RequestHolidayScan()
     end
     C_Calendar.SetAbsMonth(savedMonth, savedYear)
 
+    _holidayProvisional = (next(found.byID) == nil and next(found.byName) == nil) or nil
+    if _holidayProvisional then
+        found = LoadStoredHolidays() or found
+    else
+        StoreHolidays(found)
+    end
+
     _holidayCache = found
     _holidayScannedAt = GetTime()
-    _holidaySkew = ServerTimeSkew()
     _holidayScanRunning = false
-    StoreHolidays(found)
     if addon.UpdateDisplay then
         C_Timer.After(0, function() addon:UpdateDisplay() end)
     end
@@ -843,7 +904,7 @@ end
 -- Drop the cached scan so the next lookup rebuilds it
 function addon:InvalidateHolidayCache(force)
     if _holidayScanRunning then return end
-    if not force and _holidayScannedAt
+    if not force and not _holidayProvisional and _holidayScannedAt
         and (GetTime() - _holidayScannedAt) < HOLIDAY_RESCAN_COOLDOWN then
         return
     end
@@ -855,7 +916,21 @@ function addon:InvalidateHolidayCache(force)
     ScheduleHolidayScan()
 end
 
--- Start and end of a holiday, the soonest match for an event
+local function SoonestHolidayWindow(windows, now, best)
+    if type(windows) ~= "table" then return best end
+    if windows.startTime then windows = { windows } end
+    for i = 1, #windows do
+        local entry = windows[i]
+        if type(entry) == "table" and type(entry.startTime) == "number"
+            and type(entry.endTime) == "number" and entry.endTime > now
+            and (not best or entry.startTime < best.startTime) then
+            best = entry
+        end
+    end
+    return best
+end
+
+-- Start and end of the soonest unfinished holiday occurrence
 function addon:GetHolidayWindow(event)
     if not _holidayCache or _holidayStale then
         ScheduleHolidayScan()
@@ -869,11 +944,8 @@ function addon:GetHolidayWindow(event)
     if event.holidayID then
         for i = 1, #event.holidayID do
             local id = event.holidayID[i]
-            local entry = byID[id]
-            -- Windows already over say nothing about the next one
-            if entry and entry.endTime > now and (not best or entry.startTime < best.startTime) then
-                best, bestID = entry, id
-            end
+            local entry = SoonestHolidayWindow(byID[id], now, best)
+            if entry ~= best then best, bestID = entry, id end
         end
     end
 
@@ -883,10 +955,7 @@ function addon:GetHolidayWindow(event)
         if lowered then
             local byName = _holidayCache.byName
             for i = 1, #lowered do
-                local entry = byName[lowered[i]]
-                if entry and entry.endTime > now and (not best or entry.startTime < best.startTime) then
-                    best = entry
-                end
+                best = SoonestHolidayWindow(byName[lowered[i]], now, best)
             end
         end
     end
@@ -915,6 +984,64 @@ function addon:GetHolidayTiming(event)
     _timingResult.color          = event.color
     _timingResult.alert          = false
     _timingResult.holidayName    = name
+    _timingResult.holidayLabel   = label
+    return _timingResult
+end
+
+-- Drop cached scheduler entries when Blizzard announces new event data
+function addon:InvalidateEventSchedule()
+    wipe(_scheduledEventCache)
+end
+
+-- Read the next matching event directly from Blizzard's Event Schedule
+function addon:GetScheduledEventTiming(eventKey, event)
+    local api = C_EventScheduler
+    if not (api and api.GetScheduledEvents) then return nil end
+
+    local now = time()
+    local nextEvent = _scheduledEventCache[eventKey]
+    if not nextEvent or nextEvent.startTime <= now then
+        nextEvent = nil
+        local events = api.GetScheduledEvents()
+        if type(events) ~= "table" then
+            if (not api.HasData or not api.HasData()) and api.RequestEvents then
+                api.RequestEvents()
+            end
+            return nil
+        end
+
+        for _, entry in ipairs(events) do
+            if type(entry) == "table" and event.schedulerPoiNames[entry.areaPoiID]
+                and entry.duration == event.schedulerDuration
+                and type(entry.startTime) == "number" and entry.startTime > now
+                and (not nextEvent or entry.startTime < nextEvent.startTime) then
+                nextEvent = {
+                    areaPoiID = entry.areaPoiID,
+                    startTime = entry.startTime,
+                    duration = entry.duration,
+                }
+            end
+        end
+        _scheduledEventCache[eventKey] = nextEvent
+    end
+
+    if not nextEvent then return nil end
+    local name = event.schedulerPoiNames[nextEvent.areaPoiID]
+    if C_AreaPoiInfo and C_AreaPoiInfo.GetAreaPOIInfo then
+        local info = C_AreaPoiInfo.GetAreaPOIInfo(nil, nextEvent.areaPoiID)
+        if info and info.name then name = info.name end
+    end
+
+    local remaining = nextEvent.startTime - now
+    _timingResult.active         = false
+    _timingResult.remaining      = remaining
+    _timingResult.next           = remaining
+    _timingResult.duration       = nextEvent.duration
+    _timingResult.expirationTime = GetTime() + remaining
+    _timingResult.color          = event.color
+    _timingResult.alert          = false
+    _timingResult.holidayName    = name
+    _timingResult.holidayLabel   = nil
     return _timingResult
 end
 
@@ -923,10 +1050,11 @@ function addon:GetEventTiming(eventKey)
     local event = self.eventDB[eventKey]
     if not event then return nil end
 
+    if event.schedulerPoiNames then return self:GetScheduledEventTiming(eventKey, event) end
     if event.holidayID or event.holidayNames then return self:GetHolidayTiming(event) end
     
     local cfg = (HomeworkTrackerDB and HomeworkTrackerDB.activities) or {}
-    local region = self:GetCurrentRegion()
+    local region = GetEpochRegion(self:GetCurrentRegion())
     local first = event.epoch[region]
     local interval = event.interval
     local duration = event.duration
@@ -957,7 +1085,44 @@ function addon:GetEventTiming(eventKey)
     _timingResult.alert          = alertEnabled
     -- Shared table, so clear what only the holiday path sets
     _timingResult.holidayName    = nil
+    _timingResult.holidayLabel   = nil
     return _timingResult
+end
+
+-- Sit a row's right text lower, without dragging the name along with it
+function addon:LowerRowText(bar, pixels)
+    if not (bar and bar.timeText) then return end
+    local point, relativeTo, relativePoint, xOff, yOff = bar.timeText:GetPoint()
+    if not yOff then return end
+    bar.timeText:SetPoint(point, relativeTo, relativePoint, xOff or 0, yOff - pixels)
+
+    if bar.nameText then
+        bar.nameText:SetPoint("RIGHT", bar.timeText, "LEFT", -6, pixels)
+    end
+end
+
+-- The expansion an event is currently running, when it names one
+function addon:GetEventExpansionLabel(eventKey)
+    local timing = self:GetEventTiming(eventKey)
+    return timing and timing.holidayLabel
+end
+
+-- Colour for a named expansion, the player's own pick before the built-in one
+function addon:GetExpansionColor(label)
+    if not label then return nil end
+    local colors = HomeworkTrackerDB and HomeworkTrackerDB.colors
+    local saved = colors and colors.expansions and colors.expansions[label]
+    if saved then return unpack(saved) end
+    if not (self.expansionColors and self.expansionColors[label]) then return nil end
+    return unpack(self.expansionColors[label])
+end
+
+-- The variant of a rotating weekly that is up: held, or live out in the world
+function addon:IsQuestUp(questID)
+    if not questID then return false end
+    if C_QuestLog.IsOnQuest and C_QuestLog.IsOnQuest(questID) then return true end
+    if C_TaskQuest and C_TaskQuest.IsActive and C_TaskQuest.IsActive(questID) then return true end
+    return false
 end
 
 -- Weekly quest status
@@ -966,8 +1131,7 @@ function addon:GetWeeklyQuestInfo()
 
     local quests = {}
     for _, quest in ipairs(self.weeklyDB) do
-        if quest.isWeekend and not self:IsWithinWeekendWindow() then
-        else
+        if not quest.isWeekend or self:IsWithinWeekendWindow() then
             local questIDs = {}
             local preyCounts = nil
             local preyQuestIDs = nil
@@ -988,7 +1152,7 @@ function addon:GetWeeklyQuestInfo()
                         if type(list) ~= "table" then return 0 end
                         local c = 0
                         for _, qid in ipairs(list) do
-                            if self:IsQuestComplete(qid) then c = c + 1 end
+                            if self:IsQuestComplete(qid, quest.accountWide) then c = c + 1 end
                             if c >= perDifficultyCap then break end
                         end
                         return c
@@ -1013,9 +1177,10 @@ function addon:GetWeeklyQuestInfo()
             local isComplete = false
             local completed = 0
             local info = ""
+            local questMapID, questX, questY = quest.mapID, quest.x, quest.y
             
             if quest.questType == "simple" then
-                isComplete = self:IsQuestComplete(questIDs[1])
+                isComplete = self:IsQuestComplete(questIDs[1], quest.accountWide)
                 completed = isComplete and 1 or 0
                 
             elseif quest.questType == "single" then
@@ -1023,10 +1188,9 @@ function addon:GetWeeklyQuestInfo()
                 local activeFound = false
                 local activeComplete = false
                 for _, qid in ipairs(questIDs) do
-                    local logIndex = C_QuestLog.GetLogIndexForQuestID and C_QuestLog.GetLogIndexForQuestID(qid)
-                    if logIndex then
+                    if self:IsQuestUp(qid) then
                         activeFound = true
-                        if C_QuestLog.IsComplete(qid) then
+                        if self:IsQuestComplete(qid, quest.accountWide) then
                             activeComplete = true
                         end
                         break
@@ -1039,7 +1203,7 @@ function addon:GetWeeklyQuestInfo()
                 else
                     local flagged = 0
                     for _, qid in ipairs(questIDs) do
-                        if C_QuestLog.IsQuestFlaggedCompleted(qid) then
+                        if self:IsQuestComplete(qid, quest.accountWide) then
                             flagged = flagged + 1
                         end
                     end
@@ -1047,11 +1211,16 @@ function addon:GetWeeklyQuestInfo()
                     completed = flagged
                 end
 
-                if isComplete and quest.bossNames then
+                -- Name the variant that is up, whether it is done yet or not
+                if quest.labels or quest.locations then
                     for _, qid in ipairs(questIDs) do
-                        if self:IsQuestComplete(qid) and quest.bossNames[qid] then
-                            info = quest.bossNames[qid]
-                            break
+                        if self:IsQuestComplete(qid, quest.accountWide) or self:IsQuestUp(qid) then
+                            info = (quest.labels and quest.labels[qid]) or info
+                            local place = quest.locations and quest.locations[qid]
+                            if place then
+                                questMapID, questX, questY = place.mapID, place.x, place.y
+                            end
+                            if info ~= "" or place then break end
                         end
                     end
                 end
@@ -1059,7 +1228,7 @@ function addon:GetWeeklyQuestInfo()
             elseif quest.questType == "multiple" then
                 local totalRequired = (type(quest.max) == "number") and quest.max or #questIDs
                 for _, qid in ipairs(questIDs) do
-                    if self:IsQuestComplete(qid) then
+                    if self:IsQuestComplete(qid, quest.accountWide) then
                         completed = completed + 1
                     end
                 end
@@ -1087,9 +1256,9 @@ function addon:GetWeeklyQuestInfo()
                 required = quest.questType == "multiple" and #questIDs or 1,
                 category = quest.category,
                 handler = quest.handler,
-                mapID = quest.mapID,
-                x = quest.x,
-                y = quest.y,
+                mapID = questMapID,
+                x = questX,
+                y = questY,
                 max = quest.max,
                 preyCounts = preyCounts,
                 preyQuestIDs = preyQuestIDs,
@@ -1128,9 +1297,9 @@ function addon:GetRareInfo(currentZone)
     for _, rare in ipairs(self.raresDB) do
         local match = true
         if resolvedZone then
-            match = (rare.zone == resolvedZone) or 
-                   (string.find(resolvedZone, rare.zone, 1, true)) or 
-                   (string.find(rare.zone, resolvedZone, 1, true))
+            match = (rare.zone == resolvedZone) or
+                   (string.find(resolvedZone, rare.zone, 1, true) ~= nil) or
+                   (string.find(rare.zone, resolvedZone, 1, true) ~= nil)
         end
         -- skip based on faction flag if present
         if match and rare.faction then
@@ -1164,6 +1333,94 @@ function addon:GetRareInfo(currentZone)
     
     _dataCache[cacheKey] = rares
     return rares
+end
+
+-- What the bountiful delves currently on offer look like, for spotting a real change
+function addon:GetBountifulDelveSignature()
+    local delves = self:GetBountifulDelveInfo()
+    if not delves or #delves == 0 then return "" end
+    local parts = {}
+    for i = 1, #delves do
+        local delve = delves[i]
+        parts[i] = tostring(delve.delveID) .. ":" .. tostring(delve.name)
+    end
+    return table.concat(parts, "|")
+end
+
+-- What the weekly rows currently say, for spotting a real change
+function addon:GetWeeklyQuestSignature()
+    local quests = self:GetWeeklyQuestInfo()
+    if not quests or #quests == 0 then return "" end
+    local parts = {}
+    for i = 1, #quests do
+        local quest = quests[i]
+        local prey = ""
+        if quest.preyCounts then
+            prey = tostring(quest.preyCounts.normal) .. "," .. tostring(quest.preyCounts.hard)
+                .. "," .. tostring(quest.preyCounts.nightmare)
+        end
+        parts[i] = tostring(quest.name) .. ":" .. tostring(quest.isComplete) .. ":"
+            .. tostring(quest.progress) .. ":" .. tostring(quest.info) .. ":" .. prey
+    end
+    return table.concat(parts, "|")
+end
+
+-- What every tracked currency and crest currently holds, for spotting a real change
+function addon:GetCurrencySignature()
+    local parts = {}
+    for _, list in ipairs({ self.currencyDB or {}, self.crestDB or {} }) do
+        for i = 1, #list do
+            local entry = list[i]
+            local info = self:GetCurrencyInfo(entry.id)
+            parts[#parts + 1] = tostring(entry.id) .. ":"
+                .. (info and (tostring(info.quantity) .. "/" .. tostring(info.totalEarned)
+                    .. "/" .. tostring(info.maxQuantity)) or "-")
+        end
+    end
+    return table.concat(parts, "|")
+end
+
+-- Sections a currency or bag update can actually have changed, which is usually neither
+function addon:GetCurrencyDirtySections()
+    local dirty = {}
+    local signature = self:GetCurrencySignature()
+    if signature ~= self._lastCurrencySignature then
+        self._lastCurrencySignature = signature
+        dirty.Currency = true
+        dirty.Crests = true
+    end
+    return dirty
+end
+
+-- Sections a quest update can actually have changed, which is rarely the weeklies
+function addon:GetQuestDirtySections()
+    local dirty = { Activities = true, Rares = true }
+    local signature = self:GetWeeklyQuestSignature()
+    if signature ~= self._lastWeeklySignature then
+        self._lastWeeklySignature = signature
+        dirty.Weekly = true
+    end
+    return dirty
+end
+
+-- Sections a POI sweep can actually have changed, which is usually none of them
+function addon:GetAreaPoiDirtySections()
+    local dirty = {}
+
+    local delveSignature = self:GetBountifulDelveSignature()
+    if delveSignature ~= self._lastDelveSignature then
+        self._lastDelveSignature = delveSignature
+        dirty.Delves = true
+    end
+
+    -- Only the Abundance row reads POI data, and the harvest moves on a schedule
+    local abundancePOI = self.GetActiveAbundance and self:GetActiveAbundance() or nil
+    if abundancePOI ~= self._lastAbundancePOI then
+        self._lastAbundancePOI = abundancePOI
+        dirty.Weekly = true
+    end
+
+    return dirty
 end
 
 -- Delve instance check
@@ -1229,6 +1486,18 @@ local function DeepCopy(value, seen)
     return out
 end
 
+-- Fill in missing saved vars at any depth; existing values always win
+local function CopyDefaults(dest, src)
+    for k, v in pairs(src) do
+        if type(v) == "table" then
+            if type(dest[k]) ~= "table" then dest[k] = {} end
+            CopyDefaults(dest[k], v)
+        elseif dest[k] == nil then
+            dest[k] = v
+        end
+    end
+end
+
 local function CaptureProfileData()
     local data = {}
     for k, v in pairs(HomeworkTrackerDB) do
@@ -1253,7 +1522,23 @@ local function ApplyProfileData(profileData)
     end
 end
 
-local function SerializeValue(v)
+-- ApplyProfileData swaps the table LibDBIcon holds, so hand it the new one
+local function ApplyProfileAndRebind(profileData)
+    ApplyProfileData(profileData)
+    if addon.RefreshMinimapButton then addon:RefreshMinimapButton() end
+end
+
+local PROFILE_DATA_MAX_BYTES = 512 * 1024
+local PROFILE_DATA_MAX_DEPTH = 64
+local PROFILE_DATA_MAX_VALUES = 50000
+
+local function SerializeValue(v, state, depth)
+    state = state or { activeTables = {}, valueCount = 0 }
+    depth = depth or 0
+    if depth > PROFILE_DATA_MAX_DEPTH then return nil, "Profile is too deeply nested" end
+    state.valueCount = state.valueCount + 1
+    if state.valueCount > PROFILE_DATA_MAX_VALUES then return nil, "Profile has too many values" end
+
     local t = type(v)
     if t == "number" or t == "boolean" then
         return tostring(v)
@@ -1263,39 +1548,195 @@ local function SerializeValue(v)
         return "nil"
     end
 
+    if state.activeTables[v] then return nil, "Profile contains circular tables" end
+    state.activeTables[v] = true
+
     local parts = {}
     for k, val in pairs(v) do
         local keyRepr
         if type(k) == "string" and string.match(k, "^[%a_][%w_]*$") then
             keyRepr = k
         else
-            keyRepr = "[" .. SerializeValue(k) .. "]"
+            local serializedKey, keyErr = SerializeValue(k, state, depth + 1)
+            if not serializedKey then
+                state.activeTables[v] = nil
+                return nil, keyErr
+            end
+            keyRepr = "[" .. serializedKey .. "]"
         end
-        table.insert(parts, keyRepr .. "=" .. SerializeValue(val))
+        local serializedValue, valueErr = SerializeValue(val, state, depth + 1)
+        if not serializedValue then
+            state.activeTables[v] = nil
+            return nil, valueErr
+        end
+        table.insert(parts, keyRepr .. "=" .. serializedValue)
     end
+    state.activeTables[v] = nil
     return "{" .. table.concat(parts, ",") .. "}"
 end
 
 local function DeserializeTable(text)
-    if type(text) ~= "string" or text == "" then
+    if type(text) ~= "string" or text == "" or #text > PROFILE_DATA_MAX_BYTES then
         return nil, "Incorrect code format"
     end
 
-    local chunk = loadstring("return " .. text)
-    if not chunk then
-        return nil, "Incorrect code format"
-    end
-    if setfenv then
-        setfenv(chunk, {})
+    local position, valueCount = 1, 0
+    local length = #text
+    local parseValue
+
+    local function FailParse()
+        error("Incorrect code format", 0)
     end
 
-    local ok, result = pcall(chunk)
-    if not ok then
-        return nil, "Incorrect code format"
+    local function SkipWhitespace()
+        while position <= length and string.find(string.sub(text, position, position), "%s") do
+            position = position + 1
+        end
     end
-    if type(result) ~= "table" then
-        return nil, "Incorrect code format"
+
+    local escapeValues = {
+        a = "\a", b = "\b", f = "\f", n = "\n", r = "\r",
+        t = "\t", v = "\v", ["\\"] = "\\", ['"'] = '"', ["'"] = "'",
+    }
+
+    local function ParseString()
+        if string.sub(text, position, position) ~= '"' then FailParse() end
+        position = position + 1
+        local parts = {}
+        local partStart = position
+
+        while position <= length do
+            local char = string.sub(text, position, position)
+            if char == '"' then
+                parts[#parts + 1] = string.sub(text, partStart, position - 1)
+                position = position + 1
+                return table.concat(parts)
+            elseif char == "\\" then
+                parts[#parts + 1] = string.sub(text, partStart, position - 1)
+                position = position + 1
+                if position > length then FailParse() end
+
+                local escaped = string.sub(text, position, position)
+                if string.find(escaped, "%d") then
+                    local digits = string.match(string.sub(text, position, position + 2), "^%d%d?%d?")
+                    local byte = tonumber(digits)
+                    if not byte or byte > 255 then FailParse() end
+                    ---@cast byte integer
+                    parts[#parts + 1] = string.char(byte)
+                    position = position + #digits
+                elseif escaped == "\n" then
+                    parts[#parts + 1] = "\n"
+                    position = position + 1
+                elseif escaped == "\r" then
+                    position = position + 1
+                    if string.sub(text, position, position) == "\n" then position = position + 1 end
+                    parts[#parts + 1] = "\n"
+                else
+                    local replacement = escapeValues[escaped]
+                    if not replacement then FailParse() end
+                    parts[#parts + 1] = replacement
+                    position = position + 1
+                end
+                partStart = position
+            else
+                position = position + 1
+            end
+        end
+        FailParse()
     end
+
+    local function ParseNumber()
+        local remaining = string.sub(text, position)
+        local token = string.match(remaining, "^[%+%-]?%d+%.?%d*[eE][%+%-]?%d+")
+            or string.match(remaining, "^[%+%-]?%d*%.%d+[eE][%+%-]?%d+")
+            or string.match(remaining, "^[%+%-]?%d+%.?%d*")
+            or string.match(remaining, "^[%+%-]?%d*%.%d+")
+        local number = token and tonumber(token)
+        if not number or number ~= number or number == math.huge or number == -math.huge then
+            FailParse()
+        end
+        position = position + #token
+        return number
+    end
+
+    local function ParseTable(depth)
+        if depth > PROFILE_DATA_MAX_DEPTH then FailParse() end
+        position = position + 1
+        local result = {}
+        SkipWhitespace()
+        if string.sub(text, position, position) == "}" then
+            position = position + 1
+            return result
+        end
+
+        while position <= length do
+            local key
+            if string.sub(text, position, position) == "[" then
+                position = position + 1
+                key = parseValue(depth + 1)
+                SkipWhitespace()
+                if string.sub(text, position, position) ~= "]" then FailParse() end
+                position = position + 1
+            else
+                local identifier = string.match(string.sub(text, position), "^[%a_][%w_]*")
+                if not identifier then FailParse() end
+                key = identifier
+                position = position + #identifier
+            end
+
+            if type(key) ~= "string" and type(key) ~= "number" and type(key) ~= "boolean" then
+                FailParse()
+            end
+            SkipWhitespace()
+            if string.sub(text, position, position) ~= "=" then FailParse() end
+            position = position + 1
+            local value = parseValue(depth + 1)
+            if value ~= nil then result[key] = value end
+
+            SkipWhitespace()
+            local separator = string.sub(text, position, position)
+            if separator == "}" then
+                position = position + 1
+                return result
+            end
+            if separator ~= "," then FailParse() end
+            position = position + 1
+            SkipWhitespace()
+        end
+        FailParse()
+    end
+
+    parseValue = function(depth)
+        if depth > PROFILE_DATA_MAX_DEPTH then FailParse() end
+        valueCount = valueCount + 1
+        if valueCount > PROFILE_DATA_MAX_VALUES then FailParse() end
+        SkipWhitespace()
+
+        local char = string.sub(text, position, position)
+        if char == "{" then return ParseTable(depth) end
+        if char == '"' then return ParseString() end
+        if string.sub(text, position, position + 3) == "true" then
+            position = position + 4
+            return true
+        end
+        if string.sub(text, position, position + 4) == "false" then
+            position = position + 5
+            return false
+        end
+        if string.sub(text, position, position + 2) == "nil" then
+            position = position + 3
+            return nil
+        end
+        return ParseNumber()
+    end
+
+    local ok, result = pcall(function()
+        local parsed = parseValue(0)
+        SkipWhitespace()
+        if position <= length or type(parsed) ~= "table" then FailParse() end
+        return parsed
+    end)
+    if not ok then return nil, "Incorrect code format" end
     return result
 end
 
@@ -1313,11 +1754,12 @@ local function DecodePayload(text)
     if type(text) ~= "string" then return nil, "Incorrect code format" end
     local compact = string.gsub(text, "%s+", "")
     if string.sub(compact, 1, 5) ~= "HTP1-" then
-        return text -- Backward compatibility
+        return nil, "Incorrect code format"
     end
 
     local body = string.sub(compact, 6)
-    if (#body % 2) ~= 0 then
+    if body == "" or #body > PROFILE_DATA_MAX_BYTES * 2 or (#body % 2) ~= 0
+        or string.find(body, "[^%x]") then
         return nil, "Incorrect code format"
     end
 
@@ -1354,10 +1796,6 @@ local function GetAccountProfiles()
     return HomeworkTrackerAccountDB.__profiles
 end
 
-local function GetCharKey()
-    return UnitName("player") .. "-" .. GetRealmName()
-end
-
 function addon:InitializeSavedVariables()
     if not HomeworkTrackerDB then
         HomeworkTrackerDB = {}
@@ -1376,27 +1814,28 @@ function addon:InitializeSavedVariables()
     -- Determine active profile
     local profiles = GetAccountProfiles()
     local active = HomeworkTrackerDB.__activeProfile or "Default"
-    if type(active) ~= "string" or not profiles[active] then
+    local hasStoredProfile = type(active) == "string" and profiles[active] and true or false
+    if not hasStoredProfile then
         active = "Default"
-        profiles[active] = profiles[active] or {}
+        hasStoredProfile = profiles[active] and true or false
     end
     HomeworkTrackerDB.__activeProfile = active
 
+    -- Character data only seeds a profile that does not exist yet
+    if not hasStoredProfile then
+        local hasRuntimeData = false
+        for k in pairs(HomeworkTrackerDB) do
+            if not IsMetaKey(k) then
+                hasRuntimeData = true
+                break
+            end
+        end
+        profiles[active] = hasRuntimeData and CaptureProfileData() or {}
+    end
+
     profiles["Default"] = profiles["Default"] or {}
 
-    local activeProfile = HomeworkTrackerDB.__activeProfile
-    local hasRuntimeData = false
-    for k in pairs(HomeworkTrackerDB) do
-        if not IsMetaKey(k) then
-            hasRuntimeData = true
-            break
-        end
-    end
-    if hasRuntimeData then
-        profiles[activeProfile] = CaptureProfileData()
-    end
-
-    ApplyProfileData(profiles[activeProfile])
+    ApplyProfileAndRebind(profiles[active])
 
     -- Lock module order
     EnsureDefaultModuleOrder()
@@ -1406,38 +1845,7 @@ function addon:InitializeSavedVariables()
     local activeProfileData = GetAccountProfiles()[HomeworkTrackerDB.__activeProfile]
     local skipDefaults = activeProfileData and activeProfileData.__noDefaults
     if not skipDefaults then
-        for k, v in pairs(defaults) do
-            if HomeworkTrackerDB[k] == nil then
-                if type(v) == "table" then
-                    HomeworkTrackerDB[k] = {}
-                    for sk, sv in pairs(v) do
-                        if type(sv) == "table" then
-                            HomeworkTrackerDB[k][sk] = {}
-                            for ssk, ssv in pairs(sv) do
-                                HomeworkTrackerDB[k][sk][ssk] = ssv
-                            end
-                        else
-                            HomeworkTrackerDB[k][sk] = sv
-                        end
-                    end
-                else
-                    HomeworkTrackerDB[k] = v
-                end
-            elseif type(v) == "table" then
-                for sk, sv in pairs(v) do
-                    if HomeworkTrackerDB[k][sk] == nil then
-                        if type(sv) == "table" then
-                            HomeworkTrackerDB[k][sk] = {}
-                            for ssk, ssv in pairs(sv) do
-                                HomeworkTrackerDB[k][sk][ssk] = ssv
-                            end
-                        else
-                            HomeworkTrackerDB[k][sk] = sv
-                        end
-                    end
-                end
-            end
-        end
+        CopyDefaults(HomeworkTrackerDB, defaults)
     end
 
 
@@ -1467,12 +1875,12 @@ function addon:InitializeSavedVariables()
     -- Validate category order
     if addon.categoryInfo then
         local maxOrder = 0
-        for cid, info in pairs(addon.categoryInfo) do
+        for _, info in pairs(addon.categoryInfo) do
             if info.order and info.order > maxOrder then
                 maxOrder = info.order
             end
         end
-        for cid, info in pairs(addon.categoryInfo) do
+        for _, info in pairs(addon.categoryInfo) do
             if not info.order then
                 maxOrder = maxOrder + 1
                 info.order = maxOrder
@@ -1526,7 +1934,7 @@ function addon:SwitchProfile(name)
     self:SaveActiveProfile()
     HomeworkTrackerDB.__activeProfile = name
 
-    ApplyProfileData(profiles[name])
+    ApplyProfileAndRebind(profiles[name])
     self:InitializeSavedVariables()
 
     if self.UpdateLayout then
@@ -1573,7 +1981,7 @@ function addon:CopyProfile(sourceName, targetName)
     profiles[targetName] = DeepCopy(source)
 
     if HomeworkTrackerDB.__activeProfile == targetName then
-        ApplyProfileData(profiles[targetName])
+        ApplyProfileAndRebind(profiles[targetName])
         self:InitializeSavedVariables()
         if self.UpdateLayout then
             self:UpdateLayout()
@@ -1606,7 +2014,10 @@ function addon:ExportProfile(name)
         profile = profiles[profileName]
     end
     if not profile then return nil, "Profile not found" end
-    return EncodePayload(SerializeValue(profile))
+    local serialized, serializeErr = SerializeValue(profile)
+    if not serialized then return nil, serializeErr end
+    if #serialized > PROFILE_DATA_MAX_BYTES then return nil, "Profile is too large" end
+    return EncodePayload(serialized)
 end
 
 -- Import profile from code
@@ -1615,22 +2026,16 @@ function addon:ImportProfile(name, payload)
     name = string.match(name, "^%s*(.-)%s*$") or ""
     if name == "" then return false, "Profile name is empty" end
 
+    local profiles = GetAccountProfiles()
+    if profiles[name] then return false, "Profile already exists" end
+
     local decoded, decodeErr = DecodePayload(payload)
     if not decoded then return false, decodeErr end
 
     local parsed, err = DeserializeTable(decoded)
     if not parsed then return false, err end
-    local profiles = GetAccountProfiles()
     profiles[name] = DeepCopy(parsed)
     -- Keep imported values
     profiles[name].__noDefaults = true
-
-    if HomeworkTrackerDB.__activeProfile == name then
-        ApplyProfileData(profiles[name])
-        if self.UpdateLayout then
-            self:UpdateLayout()
-        end
-        self:UpdateDisplay()
-    end
     return true
 end

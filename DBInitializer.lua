@@ -12,7 +12,7 @@ function addon:RegisterDatabaseInit(key, fn)
     end
 
     if self.dbInitMap[key] then
-        for i, entry in ipairs(self.dbInitializers) do
+        for _, entry in ipairs(self.dbInitializers) do
             if entry.key == key then
                 entry.fn = fn
                 self.dbInitMap[key] = fn

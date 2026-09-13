@@ -248,6 +248,20 @@ addon:RegisterDatabaseInit("general", function()
         for k, v in pairs(worldEventColors) do addon.defaultColors.activities[k] = v end
     end
 
+    -- Timewalking names the expansion it is running, so the bar can take its colour
+    addon.expansionColors = {
+        ["Classic"]                = { 0.85, 0.72, 0.38 },
+        ["Burning Crusade"]        = { 0.35, 0.62, 0.22 },
+        ["Wrath of the Lich King"] = { 0.55, 0.85, 0.95 },
+        ["Cataclysm"]              = { 0.90, 0.42, 0.15 },
+        ["Mists of Pandaria"]      = { 0.30, 0.78, 0.55 },
+        ["Warlords of Draenor"]    = { 0.65, 0.35, 0.25 },
+        ["Legion"]                 = { 0.55, 0.95, 0.25 },
+        ["Battle for Azeroth"]     = { 0.40, 0.60, 0.82 },
+        ["Shadowlands"]            = { 0.80, 0.20, 0.30 },
+        ["Dragonflight"]           = { 0.75, 0.78, 0.82 },
+    }
+
     if addon.defaults then
         addon.defaults.activities = addon.defaults.activities or {}
         addon.defaults.activities.darkmoonFaire = true

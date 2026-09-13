@@ -67,16 +67,61 @@ SLASH_HOMEWORKTRACKER2 = "/hw"
 SlashCmdList["HOMEWORKTRACKER"] = function(msg)
     local cmd = msg and msg:lower():match("^%s*(%S+)") or ""
     if cmd == "toggle" then
-        HomeworkTrackerDB.enabled = not (HomeworkTrackerDB.enabled == true)
+        HomeworkTrackerDB.enabled = HomeworkTrackerDB.enabled ~= true
         addon:UpdateDisplay()
         if addon._enabledCheckbox then
             addon._enabledCheckbox.check:SetChecked(HomeworkTrackerDB.enabled == true)
         end
         print("|cff4db2ffHomeworkTracker:|r Tracker " .. (HomeworkTrackerDB.enabled == true and "enabled" or "disabled"))
+    elseif cmd == "debug" then
+        -- Debug: forces the redraw path that has to start over, then counts rows left behind
+        addon:DebugRows()
+    elseif cmd == "profiling" then
+        -- Profiling: samples what rebuilding the tracker costs
+        local seconds = tonumber(msg:match("(%d+)")) or 60
+        seconds = math.max(5, math.min(600, seconds))
+        addon:StartProfiling(seconds)
     else
         addon:OpenConfig()
     end
 end
+
+-- Which slice of the cache each event actually makes stale
+local CACHE_SCOPES = {
+    QUEST_TURNED_IN                    = { "weeklyQuests", "rares_" },
+    QUEST_LOG_UPDATE                   = { "weeklyQuests", "rares_" },
+    CURRENCY_DISPLAY_UPDATE            = { "currency_" },
+    BAG_UPDATE_DELAYED                 = { "currency_" },
+    WEEKLY_REWARDS_UPDATE              = { "greatVault" },
+    CHALLENGE_MODE_COMPLETED           = { "greatVault" },
+    CHALLENGE_MODE_MAPS_UPDATE         = { "greatVault" },
+    MAJOR_FACTION_RENOWN_LEVEL_CHANGED = { "rep_", "progress_" },
+    UPDATE_FACTION                     = { "rep_", "progress_" },
+    AREA_POIS_UPDATED                  = { "bountifulDelves" },
+}
+
+-- Which tracker sections an event can actually change, so the rest keep their rows
+local DIRTY_SECTIONS = {
+    QUEST_TURNED_IN                    = { Activities = true, Weekly = true, Rares = true },
+    QUEST_LOG_UPDATE                   = { Activities = true, Weekly = true, Rares = true },
+    CURRENCY_DISPLAY_UPDATE            = { Currency = true, Crests = true },
+    BAG_UPDATE_DELAYED                 = { Currency = true, Crests = true },
+    WEEKLY_REWARDS_UPDATE              = { GreatVault = true },
+    CHALLENGE_MODE_COMPLETED           = { GreatVault = true },
+    CHALLENGE_MODE_MAPS_UPDATE         = { GreatVault = true },
+    MAJOR_FACTION_RENOWN_LEVEL_CHANGED = { Reputations = true, Progress = true },
+    UPDATE_FACTION                     = { Reputations = true, Progress = true },
+    AREA_POIS_UPDATED                  = { Delves = true, Weekly = true },
+}
+
+-- Calendar and scheduler events only change activity rows
+local ACTIVITY_DIRTY = { Activities = true }
+
+-- Events whose first argument names the one entry that changed
+local CACHE_SCOPE_IDS = {
+    CURRENCY_DISPLAY_UPDATE            = true,
+    MAJOR_FACTION_RENOWN_LEVEL_CHANGED = true,
+}
 
 -- Register event handlers
 local eventFrame = CreateFrame("Frame")
@@ -91,57 +136,90 @@ eventFrame:RegisterEvent("QUEST_TURNED_IN")
 eventFrame:RegisterEvent("QUEST_LOG_UPDATE")
 eventFrame:RegisterEvent("CURRENCY_DISPLAY_UPDATE")
 eventFrame:RegisterEvent("WEEKLY_REWARDS_UPDATE")
+eventFrame:RegisterEvent("CHALLENGE_MODE_COMPLETED")
+eventFrame:RegisterEvent("CHALLENGE_MODE_MAPS_UPDATE")
 eventFrame:RegisterEvent("MAJOR_FACTION_RENOWN_LEVEL_CHANGED")
 eventFrame:RegisterEvent("UPDATE_FACTION")
 eventFrame:RegisterEvent("AREA_POIS_UPDATED")
 eventFrame:RegisterEvent("BAG_UPDATE_DELAYED")
 eventFrame:RegisterEvent("WALK_IN_DATA_UPDATE")
 eventFrame:RegisterEvent("CALENDAR_UPDATE_EVENT_LIST")
+if C_EventScheduler then eventFrame:RegisterEvent("EVENT_SCHEDULER_UPDATE") end
 eventFrame:RegisterEvent("PLAYER_LOGOUT")
 
 eventFrame:SetScript("OnEvent", function(self, event, ...)
-    if event == "ADDON_LOADED" and ... == addonName then
+    local arg1 = ...
+    local prof = addon._profile
+    -- Profiling: lets /hw profiling say which events are driving the rebuilds
+    if prof then addon._updateReason = event end
+    if event == "ADDON_LOADED" and arg1 == addonName then
         addon:RunDatabaseInit()
         addon:InitializeSavedVariables()
         addon:CreateUI()
         addon._allowVaultRequery = false
         if addon.CheckVisibilityState then addon:CheckVisibilityState() end
+        -- Every later ADDON_LOADED belongs to some other addon
+        self:UnregisterEvent("ADDON_LOADED")
     elseif event == "PLAYER_LOGIN" then
-        -- Loading the calendar is not free, so only ask when something needs it
+        -- Calendar only when needed; PLAYER_ENTERING_WORLD follows and does the drawing
         if C_Calendar and C_Calendar.OpenCalendar and addon:WantsHolidayData() then
             C_Timer.After(5, function() C_Calendar.OpenCalendar() end)
         end
-        if addon.CheckVisibilityState then addon:CheckVisibilityState() end
-        if addon.UpdateDisplay then addon:UpdateDisplay() end
+        if C_EventScheduler and C_EventScheduler.RequestEvents
+            and HomeworkTrackerDB.activities.curseSurge then
+            C_EventScheduler.RequestEvents()
+        end
+    -- Not in CACHE_SCOPES: holidays live in their own cache, not the data cache
     elseif event == "CALENDAR_UPDATE_EVENT_LIST" then
         if addon.InvalidateHolidayCache then addon:InvalidateHolidayCache() end
-        if addon.UpdateDisplay then addon:UpdateDisplay() end
+        if addon.UpdateDisplay then addon:UpdateDisplay(ACTIVITY_DIRTY) end
+    elseif event == "EVENT_SCHEDULER_UPDATE" then
+        if addon.InvalidateEventSchedule then addon:InvalidateEventSchedule() end
+        if addon.UpdateDisplay then addon:UpdateDisplay(ACTIVITY_DIRTY) end
     elseif event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" or event == "WALK_IN_DATA_UPDATE" then
         local wasInInstance = addon._inInstance or addon._inDelves
         if addon.InvalidateDataCache then addon:InvalidateDataCache() end
-        if addon.CheckVisibilityState then addon:CheckVisibilityState() end
-        if addon.UpdateDisplay then addon:UpdateDisplay() end
+        -- A visibility change already hid or redrew the tracker
+        local handled = addon.CheckVisibilityState and addon:CheckVisibilityState()
+        if not handled and addon.UpdateDisplay then addon:UpdateDisplay() end
         if addon.RefreshTitleBar then addon:RefreshTitleBar() end
         if not addon._allowVaultRequery then
-            C_Timer.After(5, function() addon._allowVaultRequery = true end)
+            C_Timer.After(5, function() addon:AllowGreatVaultRequery() end)
         end
         if wasInInstance and addon._allowVaultRequery then
             if addon.RequestGreatVaultRequery then addon:RequestGreatVaultRequery() end
         end
     elseif event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then
         if addon.CheckVisibilityState then addon:CheckVisibilityState() end
-    elseif event == "QUEST_TURNED_IN" or event == "QUEST_LOG_UPDATE"
-        or event == "CURRENCY_DISPLAY_UPDATE"
-        or event == "WEEKLY_REWARDS_UPDATE" or event == "MAJOR_FACTION_RENOWN_LEVEL_CHANGED"
-        or event == "UPDATE_FACTION" or event == "AREA_POIS_UPDATED"
-        or event == "BAG_UPDATE_DELAYED" then
-        -- A real vault update earns a fresh set of requery attempts
-        if event == "WEEKLY_REWARDS_UPDATE" and addon.ResetGreatVaultRequeries then
-            addon:ResetGreatVaultRequeries()
+    elseif CACHE_SCOPES[event] then
+        local prepStart = prof and debugprofilestop() or nil
+        -- Finishing a key does not refresh the map data on its own
+        if event == "CHALLENGE_MODE_COMPLETED" and C_MythicPlus and C_MythicPlus.RequestMapInfo then
+            C_MythicPlus.RequestMapInfo()
         end
-        if addon.InvalidateDataCache then addon:InvalidateDataCache() end
-        if addon.UpdateDisplay then addon:UpdateDisplay() end
+        if addon.InvalidateDataCache then
+            local id = CACHE_SCOPE_IDS[event] and arg1 or nil
+            for _, namespace in ipairs(CACHE_SCOPES[event]) do
+                addon:InvalidateDataCache(namespace, id)
+            end
+        end
+        local dirty = DIRTY_SECTIONS[event]
+        -- These fire constantly but rarely change a row, so narrow them further
+        if event == "AREA_POIS_UPDATED" and addon.GetAreaPoiDirtySections then
+            dirty = addon:GetAreaPoiDirtySections()
+        elseif (event == "QUEST_LOG_UPDATE" or event == "QUEST_TURNED_IN")
+            and addon.GetQuestDirtySections then
+            dirty = addon:GetQuestDirtySections()
+        elseif (event == "CURRENCY_DISPLAY_UPDATE" or event == "BAG_UPDATE_DELAYED")
+            and addon.GetCurrencyDirtySections then
+            dirty = addon:GetCurrencyDirtySections()
+        end
+        if prepStart and addon.RecordEventPreparation then
+            addon:RecordEventPreparation(event, prepStart)
+        end
+        if addon.UpdateDisplay then addon:UpdateDisplay(dirty) end
     elseif event == "PLAYER_LOGOUT" then
         if addon.SaveActiveProfile then addon:SaveActiveProfile() end
     end
+    if prof then addon._updateReason = nil end
 end)
