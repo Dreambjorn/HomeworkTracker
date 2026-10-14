@@ -325,7 +325,7 @@ local function ReportProfiling()
         for i = 1, #sections do
             local name = sections[i][1]
             AddValue(rows, name, ("%.2f ms  |  %d rows")
-                :format(sections[i][2], prof.bySectionRows[name] or 0), 1)
+                :format(sections[i][2], prof.bySectionRows[name] or 0))
         end
     end
 

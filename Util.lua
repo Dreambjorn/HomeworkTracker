@@ -1089,18 +1089,6 @@ function addon:GetEventTiming(eventKey)
     return _timingResult
 end
 
--- Sit a row's right text lower, without dragging the name along with it
-function addon:LowerRowText(bar, pixels)
-    if not (bar and bar.timeText) then return end
-    local point, relativeTo, relativePoint, xOff, yOff = bar.timeText:GetPoint()
-    if not yOff then return end
-    bar.timeText:SetPoint(point, relativeTo, relativePoint, xOff or 0, yOff - pixels)
-
-    if bar.nameText then
-        bar.nameText:SetPoint("RIGHT", bar.timeText, "LEFT", -6, pixels)
-    end
-end
-
 -- The expansion an event is currently running, when it names one
 function addon:GetEventExpansionLabel(eventKey)
     local timing = self:GetEventTiming(eventKey)
@@ -1175,9 +1163,17 @@ function addon:GetWeeklyQuestInfo()
                 table.insert(questIDs, quest.questID)
             end
             local isComplete = false
+            local isAccepted = false
             local completed = 0
             local info = ""
             local questMapID, questX, questY = quest.mapID, quest.x, quest.y
+
+            for _, qid in ipairs(questIDs) do
+                if C_QuestLog.IsOnQuest and C_QuestLog.IsOnQuest(qid) then
+                    isAccepted = true
+                    break
+                end
+            end
             
             if quest.questType == "simple" then
                 isComplete = self:IsQuestComplete(questIDs[1], quest.accountWide)
@@ -1251,6 +1247,7 @@ function addon:GetWeeklyQuestInfo()
                 name = quest.name,
                 expansion = quest.expansion,
                 isComplete = isComplete,
+                isAccepted = isAccepted,
                 info = info,
                 progress = completed,
                 required = quest.questType == "multiple" and #questIDs or 1,
@@ -1360,6 +1357,7 @@ function addon:GetWeeklyQuestSignature()
                 .. "," .. tostring(quest.preyCounts.nightmare)
         end
         parts[i] = tostring(quest.name) .. ":" .. tostring(quest.isComplete) .. ":"
+            .. tostring(quest.isAccepted) .. ":"
             .. tostring(quest.progress) .. ":" .. tostring(quest.info) .. ":" .. prey
     end
     return table.concat(parts, "|")

@@ -51,6 +51,26 @@ local function SetGlyphFont(fs)
     addon:SetFont(fs, nil, nil, "NONE")
 end
 
+-- Keep artwork separate so it cannot change the value's line box
+function addon:PlaceRightGlyph(bar, markup, width, gap, glyphYOffset)
+    if not (bar and bar.timeText) then return nil end
+    local point, relativeTo, relativePoint, xOffset, yOffset = bar.timeText:GetPoint()
+    if not point then return nil end
+
+    local glyph = bar.glyphText or bar:CreateFontString(nil, "OVERLAY")
+    bar.glyphText = glyph
+    glyph:ClearAllPoints()
+    glyph:SetPoint(point, relativeTo, relativePoint, xOffset or 0, (yOffset or 0) + (glyphYOffset or 0))
+    glyph:SetJustifyH("RIGHT")
+    SetGlyphFont(glyph)
+    glyph:SetText(markup or "")
+    glyph:Show()
+
+    bar.timeText:ClearAllPoints()
+    bar.timeText:SetPoint(point, relativeTo, relativePoint, (xOffset or 0) - (width or 14) - (gap or 3), yOffset or 0)
+    return glyph
+end
+
 -- Strip everything a section may have set, so a recycled row starts clean
 local function ResetRowState(container)
     if not container then return end
@@ -1151,7 +1171,6 @@ function addon:UpdateGreatVaultSection(parent, yOffset, _expStates)
         local entries = vaultData[slot.key]
         if slot.show and #entries > 0 then
             local bar = self:CreateContainer(parent, yOffset, true)
-            addon:LowerRowText(bar, 2)
             bar.nameText:SetText(slot.label)
 
             bar.timeText:SetText(string.format(
@@ -1249,7 +1268,6 @@ function addon:UpdateWeeklySection(parent, yOffset, expStates)
         if (not quest.expansion or expStates[quest.expansion]) and not isHidden and (not cfg.hideComplete or not quest.isComplete) then
             hasContent = true
             local bar = self:CreateContainer(parent, yOffset, true)
-            addon:LowerRowText(bar, 2)
             bar.nameText:SetText(quest.name)
             bar.icon:Hide()
 
@@ -1265,12 +1283,18 @@ function addon:UpdateWeeklySection(parent, yOffset, expStates)
                 local preyLabels = { "Normal", "Hard", "Nightmare" }
                 local preyCounts = { n, h, m }
                 local preyMax = quest.max or 4
+                local visiblePrey = {}
+                for idx = 1, #preyCounts do
+                    if not cfg.hideComplete or preyCounts[idx] < preyMax then
+                        table.insert(visiblePrey, idx)
+                    end
+                end
 
                 bar.timeText:SetText("")
                 bar.timeText:Hide()
                 bar.preyElements = bar.preyElements or {}
-                for i = 1, 3 do
-                    local idx = (#preyCounts - i + 1)
+                for i = 1, #visiblePrey do
+                    local idx = visiblePrey[#visiblePrey - i + 1]
                     local count = preyCounts[idx]
                     local atlas = preyAtlases[idx]
                     local label = preyLabels[idx]
@@ -1313,13 +1337,15 @@ function addon:UpdateWeeklySection(parent, yOffset, expStates)
                     elem:ClearAllPoints()
 
                     if i == 1 then
-                        elem:SetPoint("BOTTOMRIGHT", bar, "TOPRIGHT", -17, -10)
+                        elem:SetPoint("BOTTOMRIGHT", bar, "TOPRIGHT", -17, -8)
                     else
                         elem:SetPoint("BOTTOMRIGHT", bar.preyElements[i-1], "BOTTOMLEFT", -1, 0)
                     end
 
-                    elem.icon:SetPoint("RIGHT", elem, "RIGHT", -1, 2)
-                    elem.qtyText:SetPoint("RIGHT", elem.icon, "LEFT", -1, -2)
+                    elem.icon:ClearAllPoints()
+                    elem.icon:SetPoint("RIGHT", elem, "RIGHT", -1, 0)
+                    elem.qtyText:ClearAllPoints()
+                    elem.qtyText:SetPoint("BOTTOMRIGHT", elem, "BOTTOMRIGHT", -(iconSize + 2), 0)
                     elem.icon:SetSize(iconSize, iconSize)
 
                     if elem.iconButton then
@@ -1359,7 +1385,7 @@ function addon:UpdateWeeklySection(parent, yOffset, expStates)
                     elem:Show()
                 end
 
-                local total = #preyCounts
+                local total = #visiblePrey
                 for j = total + 1, #bar.preyElements do
                     if bar.preyElements[j] then bar.preyElements[j]:Hide() end
                 end
@@ -1381,20 +1407,9 @@ function addon:UpdateWeeklySection(parent, yOffset, expStates)
                 addon.weeklyHandlers[quest.handler](bar, quest)
             else
                 local mapID, qx, qy = addon:GetWeeklyLocation(quest)
-                if mapID then
+                if mapID and not quest.isAccepted then
                     local zoneName = addon:GetMapName(mapID)
-                    -- Glyph apart from text so outline cannot move it
-                    local glyph = bar.glyphText or bar:CreateFontString(nil, "OVERLAY")
-                    bar.glyphText = glyph
-                    glyph:ClearAllPoints()
-                    glyph:SetPoint(bar.timeText:GetPoint())
-                    glyph:SetJustifyH("RIGHT")
-                    SetGlyphFont(glyph)
-                    glyph:SetText("|A:ui-questpoirecurring-questbang:14:14:0:0|a")
-                    glyph:Show()
-
-                    bar.timeText:ClearAllPoints()
-                    bar.timeText:SetPoint("RIGHT", glyph, "LEFT", -3, 0)
+                    local glyph = addon:PlaceRightGlyph(bar, "|A:ui-questpoirecurring-questbang:14:14:0:0|a", 14, 3, -2)
                     bar.iconButton:ClearAllPoints()
                     bar.iconButton:SetPoint("RIGHT", glyph, "RIGHT", 0, 0)
                     bar.iconButton:SetSize(16, 16)
@@ -1498,7 +1513,6 @@ function addon:UpdateCrestsSection(parent, yOffset, expStates)
         hasContent = true
 
         local bar = self:CreateContainer(parent, yOffset, true)
-        addon:LowerRowText(bar, 2)
         bar.nameText:SetText("Crests")
         bar.icon:Hide()
         addon:SetBarColor(bar, r, g, b, 0.8)
@@ -1552,13 +1566,15 @@ function addon:UpdateCrestsSection(parent, yOffset, expStates)
             elem:ClearAllPoints()
 
             if i == 1 then
-                elem:SetPoint("BOTTOMRIGHT", bar, "TOPRIGHT", -17, -10)
+                elem:SetPoint("BOTTOMRIGHT", bar, "TOPRIGHT", -17, -8)
             else
                 elem:SetPoint("BOTTOMRIGHT", bar.crestElements[i-1], "BOTTOMLEFT", -1, 0)
             end
 
-            elem.icon:SetPoint("RIGHT", elem, "RIGHT", -1, 2)
-            elem.qtyText:SetPoint("RIGHT", elem.icon, "LEFT", -1, -2)
+            elem.icon:ClearAllPoints()
+            elem.icon:SetPoint("RIGHT", elem, "RIGHT", -1, 1)
+            elem.qtyText:ClearAllPoints()
+            elem.qtyText:SetPoint("BOTTOMRIGHT", elem, "BOTTOMRIGHT", -(iconSize + 2), 0)
             if elem.iconButton then
                 elem.iconButton:ClearAllPoints()
                 elem.iconButton:SetAllPoints(elem.icon)
@@ -1610,7 +1626,6 @@ function addon:UpdateCurrencySection(parent, yOffset, expStates)
                 if info then
                     hasContent = true
                     local bar = self:CreateContainer(parent, yOffset, true)
-                    addon:LowerRowText(bar, 2)
                     local iconID = currency.icon or info.iconFileID
 
                     local displayName
@@ -1624,11 +1639,11 @@ function addon:UpdateCurrencySection(parent, yOffset, expStates)
                     
                     bar.icon:Hide()
                     addon:SetBarColor(bar, r, g, b, 0.8)
-                    local iconStr = " |T" .. iconID .. ":14:14:-2:2|t"
+                    local glyph = addon:PlaceRightGlyph(bar, "|T" .. iconID .. ":14:14:-2:2|t", 14, 3, -1)
                     bar.iconButton:Show()
                     bar.iconButton:SetSize(16, 16)
                     bar.iconButton:ClearAllPoints()
-                    bar.iconButton:SetPoint("RIGHT", bar.timeText, "RIGHT", 0, 0)
+                    bar.iconButton:SetPoint("RIGHT", glyph, "RIGHT", 0, 0)
                     bar.iconButton:SetScript("OnEnter", function(self)
                         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                         if not C_CurrencyInfo.GetCurrencyInfo(currency.id) then
@@ -1648,14 +1663,14 @@ function addon:UpdateCurrencySection(parent, yOffset, expStates)
                     if cap > 0 then
                         local percent = math.floor((info.quantity / cap) * 100)
                         if fmt == "percent" then
-                            bar.timeText:SetText(string.format("%s (%d%%)", info.quantity, percent) .. iconStr)
+                            bar.timeText:SetText(string.format("%s (%d%%)", info.quantity, percent))
                         elseif fmt == "slash" then
-                            bar.timeText:SetText(string.format("%s/%s", info.quantity, cap) .. iconStr)
+                            bar.timeText:SetText(string.format("%s/%s", info.quantity, cap))
                         else
-                            bar.timeText:SetText(string.format("%s/%s (%d%%)", info.quantity, cap, percent) .. iconStr)
+                            bar.timeText:SetText(string.format("%s/%s (%d%%)", info.quantity, cap, percent))
                         end
                     else
-                        bar.timeText:SetText(tostring(info.quantity) .. iconStr)
+                        bar.timeText:SetText(tostring(info.quantity))
                     end
                     
                     table.insert(self.sections, bar)
@@ -1949,11 +1964,9 @@ function addon:UpdateRaresSection(parent, yOffset, expStates)
                 for _, entry in ipairs(list) do
                     local rare = entry
                     local bar = self:CreateContainer(parent, yOffset, true, 20)
-                    addon:LowerRowText(bar, 2)
-
                     bar.nameText:SetText(rare.name)
-                    bar.timeText:SetText("|A:DungeonSkull:14:14:1:0|a")
-                    SetGlyphFont(bar.timeText)
+                    bar.timeText:SetText("")
+                    local glyph = addon:PlaceRightGlyph(bar, "|A:DungeonSkull:14:14:1:0|a", 14, 3, -2)
                     bar.icon:Hide()
 
                     addon:SetBarColor(bar, zcolor[1], zcolor[2], zcolor[3], 0.8)
@@ -1964,7 +1977,7 @@ function addon:UpdateRaresSection(parent, yOffset, expStates)
                         bar.iconButton:Show()
                         bar.iconButton:SetSize(16, 16)
                         bar.iconButton:ClearAllPoints()
-                        bar.iconButton:SetPoint("RIGHT", bar.timeText, "RIGHT", 0, 0)
+                        bar.iconButton:SetPoint("RIGHT", glyph, "RIGHT", 0, 0)
 
                         bar.iconButton:SetScript("OnEnter", function(self)
                             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -2058,9 +2071,9 @@ function addon:UpdateDelvesSection(parent, yOffset, expStates)
         hasContent = true 
          
         local bar = self:CreateContainer(parent, yOffset, true) 
-        addon:LowerRowText(bar, 2)
         bar.nameText:SetText(delve.name) 
-        bar.timeText:SetText(delve.zone .. " |A:delves-bountiful:14:14|a") 
+        bar.timeText:SetText(delve.zone)
+        local glyph = addon:PlaceRightGlyph(bar, "|A:delves-bountiful:14:14|a", 14, 3, -2)
         bar.icon:Hide() 
          
         addon:SetBarColor(bar, r, g, b, 0.8) 
@@ -2070,7 +2083,7 @@ function addon:UpdateDelvesSection(parent, yOffset, expStates)
             bar.iconButton:Show()
             bar.iconButton:SetSize(16, 16)
             bar.iconButton:ClearAllPoints()
-            bar.iconButton:SetPoint("RIGHT", bar.timeText, "RIGHT", 0, 0)
+            bar.iconButton:SetPoint("RIGHT", glyph, "RIGHT", 0, 0)
 
             bar.iconButton:SetScript("OnEnter", function(self)
                 GameTooltip:SetOwner(self, "ANCHOR_RIGHT")

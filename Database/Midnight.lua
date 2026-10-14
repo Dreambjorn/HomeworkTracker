@@ -243,7 +243,7 @@ addon:RegisterDatabaseInit("midnight", function()
             },
         },
         {
-            name = "Weekly Dungeon", questType = "single", isWeekend = false, category = "general", mapID = 2393, x = 49.0, y = 64.8,
+            name = "Weekly Dungeon", questType = "single", accountWide = true, isWeekend = false, category = "general", mapID = 2393, x = 49.0, y = 64.8,
             questID = { 93751, 93752, 93753, 93754, 93755, 93756, 93757, 93758 },
             labels = {
                 [93751] = "Windrunner Spire",
@@ -418,7 +418,7 @@ addon:RegisterDatabaseInit("midnight", function()
         { name = "The Gulf of Memory",  delveID = 8436, zone = "Harandar",           x = 36.30, y = 49.20 },
         { name = "Shadowguard Point",   delveID = 8432, zone = "Voidstorm",          x = 37.38, y = 47.70 },
         { name = "Sunkiller Sanctum",   delveID = 8430, zone = "Voidstorm",          x = 54.80, y = 47.00 },
-        -- 12.1
+        -- Season 2
         { name = "Gnarldor Isle",       delveID = 8760, zone = "The Coiled Isle",    x = 64.54, y = 77.58 },
         { name = "The Ring of Glory",   delveID = 8763, zone = "The Coiled Isle",    x = 71.35, y = 56.54 },
         { name = "Venomfall Deeps",     delveID = 8779, zone = "The Coiled Isle",    x = 51.23, y = 30.36 },

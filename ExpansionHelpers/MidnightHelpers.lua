@@ -37,19 +37,11 @@ end
 function addon:ConfigureAbundanceDisplay(bar, mapName)
     if not bar or not bar.iconButton then return end
     if bar.icon then bar.icon:Hide() end
+    local glyph = addon:PlaceRightGlyph(bar, "|A:ui-eventpoi-abundancebountiful:14:14|a", 14, 3, -2)
     bar.iconButton:Show()
     bar.iconButton:SetSize(16, 16)
     bar.iconButton:ClearAllPoints()
-
-    if bar.timeText then
-        local p, rel, rp, xOff, yOff = bar.timeText:GetPoint()
-        if xOff then
-            local newX = xOff - 1
-            bar.timeText:ClearAllPoints()
-            bar.timeText:SetPoint(p or "RIGHT", rel or bar, rp or "RIGHT", newX, yOff or 0)
-        end
-    end
-    bar.iconButton:SetPoint("RIGHT", bar.timeText, "RIGHT", 0, 0)
+    bar.iconButton:SetPoint("RIGHT", glyph, "RIGHT", 0, 0)
 
     bar.iconButton:SetScript("OnMouseUp", function(self)
         local _, uiMapID = addon:GetActiveAbundance()
@@ -77,12 +69,11 @@ function addon:PopulateAbundanceText(bar, quest)
         bar.nameText:SetText(quest.name)
     end
     local info, mapName = addon:GetAbundanceInfo()
-    local atlasTag = " |A:ui-eventpoi-abundancebountiful:14:14|a"
     if bar.timeText then
         if info and info ~= "" then
-            bar.timeText:SetText(info .. atlasTag)
+            bar.timeText:SetText(info)
         else
-            bar.timeText:SetText((bar.timeText:GetText() or (quest.name or "")) .. atlasTag)
+            bar.timeText:SetText("")
         end
     end
     return mapName
